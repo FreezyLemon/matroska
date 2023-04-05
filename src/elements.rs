@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use nom::{
     bytes::streaming::take,
     combinator::{complete, cond, map, map_opt, opt},
@@ -9,8 +11,8 @@ use nom::{
 pub use uuid::Uuid;
 
 use crate::ebml::{
-    binary, binary_exact, binary_ref, check_id, checksum, crc, elem_size, float, float_or, int,
-    master, skip_void, str, uint, uuid, vid, vint, EbmlResult,
+    binary, binary_exact, binary_ref, bool, checksum, crc, elem_size, float, float_or, int, master,
+    skip_void, str, uint, uuid, vid, vint, EbmlResult, check_id,
 };
 use crate::permutation::matroska_permutation;
 
@@ -172,16 +174,16 @@ pub struct ChapterTranslate {
 
 pub fn chapter_translate(input: &[u8]) -> EbmlResult<ChapterTranslate> {
     master(0x6924, |inp| {
-        matroska_permutation((binary(0x69A5), uint(0x69BF), many0(uint(0x69FC))))(inp).and_then(
+        matroska_permutation((binary(0x69A5), uint(0x69BF), many0(uint(0x69FC))))(inp).map(
             |(i, t)| {
-                Ok((
+                (
                     i,
                     ChapterTranslate {
-                        id: value_error(0x69A5, t.0)?,
-                        codec: value_error(0x69BF, t.1)?,
-                        edition_uid: value_error(0x69FC, t.2)?,
+                        id: t.0,
+                        codec: t.1,
+                        edition_uid: t.2,
                     },
-                ))
+                )
             },
         )
     })(input)
@@ -1021,11 +1023,169 @@ pub fn projection(input: &[u8]) -> EbmlResult<Projection> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Chapters {}
+pub struct Chapters {
+    pub edition_entry: EditionEntry,
+}
 
-//https://datatracker.ietf.org/doc/html/draft-lhomme-cellar-matroska-03#section-7.3.199
 pub fn chapters(input: &[u8]) -> EbmlResult<SegmentElement> {
-    master(0x45B9, |i| Ok((i, SegmentElement::Chapters(Chapters {}))))(input)
+    map(complete(edition_entry), |edition_entry| {
+        SegmentElement::Chapters(Chapters { edition_entry })
+    })(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditionEntry {
+    pub uid: Option<NonZeroU64>,
+    pub flag_default: bool,
+    pub flag_ordered: bool,
+    pub chapter_atoms: Vec<ChapterAtom>,
+}
+
+pub fn edition_entry(input: &[u8]) -> EbmlResult<EditionEntry> {
+    master(0x45B9, |inp| {
+        matroska_permutation((
+            opt(uint(0x45BC)),
+            opt(bool(0x45DB)),
+            opt(bool(0x45DD)),
+            many1(complete(chapter_atom)),
+        ))(inp)
+        .map(|(i, t)| {
+            (
+                i,
+                EditionEntry {
+                    uid: t.0.and_then(NonZeroU64::new),
+                    flag_default: t.1.unwrap_or(false),
+                    flag_ordered: t.2.unwrap_or(false),
+                    chapter_atoms: t.3,
+                },
+            )
+        })
+    })(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChapterAtom {
+    pub uid: u64,
+    pub string_uid: Option<String>,
+    pub time_start: u64,
+    pub time_end: Option<u64>,
+    pub flag_hidden: bool,
+    pub segment_uid: Option<Uuid>,
+    pub segment_edition_uid: Option<u64>,
+    pub physical_equiv: Option<u64>,
+    pub display: Option<ChapterDisplay>,
+    pub process: Option<ChapterProcess>,
+}
+
+pub fn chapter_atom(input: &[u8]) -> EbmlResult<ChapterAtom> {
+    master(0xB6, |inp| {
+        matroska_permutation((
+            uint(0x73C4),
+            opt(str(0x5654)),
+            uint(0x91),
+            opt(uint(0x92)),
+            opt(bool(0x98)),
+            opt(uuid(0x6E67)),
+            opt(uint(0x6EBC)),
+            opt(uint(0x63C3)),
+            opt(complete(chapter_display)),
+            opt(complete(chapter_process)),
+        ))(inp)
+        .map(|(i, t)| {
+            (
+                i,
+                ChapterAtom {
+                    uid: t.0,
+                    string_uid: t.1,
+                    time_start: t.2,
+                    time_end: t.3,
+                    flag_hidden: t.4.unwrap_or(false),
+                    segment_uid: t.5,
+                    segment_edition_uid: t.6,
+                    physical_equiv: t.7,
+                    display: t.8,
+                    process: t.9,
+                },
+            )
+        })
+    })(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChapterDisplay {
+    pub string: String,
+    pub language: Vec<String>,
+    pub language_bcp47: Vec<String>,
+    pub country: Vec<String>,
+}
+
+pub fn chapter_display(input: &[u8]) -> EbmlResult<ChapterDisplay> {
+    master(0x80, |inp| {
+        matroska_permutation((
+            str(0x85),
+            many1(str(0x437C)),
+            many0(str(0x437D)),
+            many0(str(0x437E)),
+        ))(inp)
+        .map(|(i, t)| {
+            (
+                i,
+                ChapterDisplay {
+                    string: t.0,
+                    language: t.1,
+                    language_bcp47: t.2,
+                    country: t.3,
+                },
+            )
+        })
+    })(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChapterProcess {
+    pub codec_id: u64,
+    pub private: Option<Vec<u8>>,
+    pub command: Vec<ChapterProcessCommand>,
+}
+
+pub fn chapter_process(input: &[u8]) -> EbmlResult<ChapterProcess> {
+    master(0x6944, |inp| {
+        matroska_permutation((
+            opt(uint(0x6955)),
+            opt(binary(0x450D)),
+            many0(complete(chapter_process_command)),
+        ))(inp)
+        .map(|(i, t)| {
+            (
+                i,
+                ChapterProcess {
+                    codec_id: t.0.unwrap_or(0),
+                    private: t.1,
+                    command: t.2,
+                },
+            )
+        })
+    })(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChapterProcessCommand {
+    pub time: u64,
+    pub data: Vec<u8>,
+}
+
+pub fn chapter_process_command(input: &[u8]) -> EbmlResult<ChapterProcessCommand> {
+    master(0x6911, |inp| {
+        matroska_permutation((uint(0x6922), binary(0x6933)))(inp).map(|(i, t)| {
+            (
+                i,
+                ChapterProcessCommand {
+                    time: t.0,
+                    data: t.1,
+                },
+            )
+        })
+    })(input)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

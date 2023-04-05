@@ -206,6 +206,17 @@ impl<T: Int> EbmlParsable for T {
     }
 }
 
+impl EbmlParsable for bool {
+    fn try_parse(data: &[u8]) -> Result<Self, ParseError> {
+        // bools or "flags" are represented by uintegers
+        if data.len() > 8 {
+            return Err(ParseError::IntTooWide);
+        }
+
+        Ok(data.iter().any(|&b| b != 0))
+    }
+}
+
 impl EbmlParsable for f64 {
     fn try_parse(data: &[u8]) -> Result<Self, ParseError> {
         match data.len() {
@@ -249,6 +260,10 @@ fn ebml_generic<O: EbmlParsable>(id: u32) -> impl Fn(&[u8]) -> EbmlResult<O> {
         let parsed = map_res(data, |d| O::try_parse(d).map_err(|k| Error::Ebml(id, k)));
         complete(parsed)(i)
     }
+}
+
+pub fn bool(id: u32) -> impl Fn(&[u8]) -> EbmlResult<bool> {
+    ebml_generic(id)
 }
 
 pub fn u32(id: u32) -> impl Fn(&[u8]) -> EbmlResult<u32> {
