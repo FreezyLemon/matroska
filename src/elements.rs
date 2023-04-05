@@ -164,11 +164,27 @@ pub fn info(input: &[u8]) -> EbmlResult<SegmentElement> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChapterTranslate {}
+pub struct ChapterTranslate {
+    id: Vec<u8>,
+    codec: u64,
+    edition_uid: Vec<u64>,
+}
 
-//https://datatracker.ietf.org/doc/html/draft-lhomme-cellar-matroska-03#section-7.3.16
 pub fn chapter_translate(input: &[u8]) -> EbmlResult<ChapterTranslate> {
-    master(0x6924, |i| Ok((i, ChapterTranslate {})))(input)
+    master(0x6924, |inp| {
+        matroska_permutation((binary(0x69A5), uint(0x69BF), many0(uint(0x69FC))))(inp).and_then(
+            |(i, t)| {
+                Ok((
+                    i,
+                    ChapterTranslate {
+                        id: value_error(0x69A5, t.0)?,
+                        codec: value_error(0x69BF, t.1)?,
+                        edition_uid: value_error(0x69FC, t.2)?,
+                    },
+                ))
+            },
+        )
+    })(input)
 }
 
 //https://datatracker.ietf.org/doc/html/draft-lhomme-cellar-matroska-03#section-7.3.26
