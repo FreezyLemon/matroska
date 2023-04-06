@@ -55,7 +55,7 @@ pub fn segment_element(input: &[u8]) -> EbmlResult<SegmentElement> {
         0x1F43B675 => sub_element(cluster)(i),
         0x1043A770 => sub_element(chapters)(i),
         0x1254C367 => sub_element(|i| Ok((i, SegmentElement::Tags(Tags {}))))(i),
-        0x1941A469 => sub_element(|i| Ok((i, SegmentElement::Attachments(Attachments {}))))(i),
+        0x1941A469 => sub_element(attachments)(i),
         0x1654AE6B => sub_element(tracks)(i),
         0x1C53BB6B => sub_element(|i| Ok((i, SegmentElement::Cues(Cues {}))))(i),
         0xEC => {
@@ -1192,7 +1192,51 @@ pub fn chapter_process_command(input: &[u8]) -> EbmlResult<ChapterProcessCommand
 pub struct Cues {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Attachments {}
+pub struct Attachments {
+    pub attached_files: Vec<AttachedFile>,
+}
+
+pub fn attachments(input: &[u8]) -> EbmlResult<SegmentElement> {
+    many1(complete(attached_file))(input).map(|(i, attached_files)| {
+        (
+            i,
+            SegmentElement::Attachments(Attachments { attached_files }),
+        )
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachedFile {
+    pub description: Option<String>,
+    pub name: String,
+    pub media_type: String,
+    pub data: Vec<u8>,
+    pub uid: NonZeroU64,
+}
+
+pub fn attached_file(input: &[u8]) -> EbmlResult<AttachedFile> {
+    master(0x61A7, |inp| {
+        matroska_permutation((
+            str(0x467E),
+            str(0x466E),
+            str(0x4660),
+            binary(0x465C),
+            uint(0x46AE),
+        ))(inp)
+        .and_then(|(i, t)| {
+            Ok((
+                i,
+                AttachedFile {
+                    description: t.0,
+                    name: value_error(0x466E, t.1)?,
+                    media_type: value_error(0x4660, t.2)?,
+                    data: value_error(0x465C, t.3)?,
+                    uid: value_error(0x46AE, t.4.and_then(NonZeroU64::new))?,
+                },
+            ))
+        })
+    })(input)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tags {}
