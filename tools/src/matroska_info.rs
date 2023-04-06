@@ -236,6 +236,30 @@ fn run(filename: &str) -> Result<(), InfoError> {
                         tracks = Some(t);
                     }
                 }
+                SegmentElement::Chapters(c) => {
+                    println!("|+ Chapters");
+                    println!("| + Edition entry");
+                    println!(
+                        "|  + Edition flag default: {}",
+                        c.edition_entry.flag_default as u8
+                    );
+                    if let Some(uid) = c.edition_entry.uid {
+                        println!("|  + Edition UID: {uid}");
+                    }
+
+                    for atom in c.edition_entry.chapter_atoms {
+                        println!("|  + Chapter atom");
+                        println!("|   + Chapter UID: {}", atom.uid);
+                        println!("|   + Chapter time start: {}", atom.time_start);
+                        println!("|   + Chapter flag hidden: {}", atom.flag_hidden as u8);
+                        if let Some(display) = atom.display {
+                            println!("|   + Chapter display");
+                            println!("|    + Chapter string: {}", display.string);
+                            // Language should always have > 0 elements
+                            println!("|    + Chapter language: {}", display.language[0]);
+                        }
+                    }
+                }
                 SegmentElement::Void(s) => {
                     println!("|+ EbmlVoid (size: {})", s);
                 }
