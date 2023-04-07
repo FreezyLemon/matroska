@@ -236,30 +236,6 @@ fn run(filename: &str) -> Result<(), InfoError> {
                         tracks = Some(t);
                     }
                 }
-                SegmentElement::Chapters(c) => {
-                    println!("|+ Chapters");
-                    println!("| + Edition entry");
-                    println!(
-                        "|  + Edition flag default: {}",
-                        c.edition_entry.flag_default as u8
-                    );
-                    if let Some(uid) = c.edition_entry.uid {
-                        println!("|  + Edition UID: {uid}");
-                    }
-
-                    for atom in c.edition_entry.chapter_atoms {
-                        println!("|  + Chapter atom");
-                        println!("|   + Chapter UID: {}", atom.uid);
-                        println!("|   + Chapter time start: {}", atom.time_start);
-                        println!("|   + Chapter flag hidden: {}", atom.flag_hidden as u8);
-                        if let Some(display) = atom.display {
-                            println!("|   + Chapter display");
-                            println!("|    + Chapter string: {}", display.string);
-                            // Language should always have > 0 elements
-                            println!("|    + Chapter language: {}", display.language[0]);
-                        }
-                    }
-                }
                 SegmentElement::Void(s) => {
                     println!("|+ EbmlVoid (size: {})", s);
                 }
@@ -309,6 +285,30 @@ fn run(filename: &str) -> Result<(), InfoError> {
                         "seek head, info or tracks element".to_string(),
                     ));
                 }
+                SegmentElement::Chapters(c) => {
+                    println!("|+ Chapters");
+                    println!("| + Edition entry");
+                    println!(
+                        "|  + Edition flag default: {}",
+                        c.edition_entry.flag_default as u8
+                    );
+                    if let Some(uid) = c.edition_entry.uid {
+                        println!("|  + Edition UID: {uid}");
+                    }
+
+                    for atom in c.edition_entry.chapter_atoms {
+                        println!("|  + Chapter atom");
+                        println!("|   + Chapter UID: {}", atom.uid);
+                        println!("|   + Chapter time start: {}", atom.time_start);
+                        println!("|   + Chapter flag hidden: {}", atom.flag_hidden as u8);
+                        if let Some(display) = atom.display {
+                            println!("|   + Chapter display");
+                            println!("|    + Chapter string: {}", display.string);
+                            // Language should always have > 0 elements
+                            println!("|    + Chapter language: {}", display.language[0]);
+                        }
+                    }
+                }
                 SegmentElement::Cluster(c) => {
                     println!("|+ Cluster");
                     println!("|+   Timestamp: {}", c.timestamp);
@@ -331,10 +331,23 @@ fn run(filename: &str) -> Result<(), InfoError> {
                 SegmentElement::Cues(_) => {
                     println!("|+ Cues");
                 }
+                SegmentElement::Attachments(att) => {
+                    println!("|+ Attachments");
+                    for f in att.attached_files {
+                        println!("| + Attached");
+                        println!("|  + File name: {}", f.name);
+                        // FIXME: Is this the same way the description is printed as in mkvinfo?
+                        if let Some(desc) = f.description {
+                            println!("|  + File description: {desc}");
+                        }
+                        println!("|  + MIME type: {}", f.media_type);
+                        println!("|  + File data: size {}", f.data.len());
+                        println!("|  + File UID: {}", f.uid);
+                    }
+                }
                 SegmentElement::Unknown(id, data) => {
                     return Err(InfoError::UnknownElement(_consumed, id, data))
                 }
-                el => return Err(InfoError::UnexpectedElement(format!("{:?}", el))),
             }
 
             b.data().offset(i)
