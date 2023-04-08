@@ -1,5 +1,3 @@
-use std::num::NonZeroU64;
-
 use nom::{
     bytes::streaming::take,
     combinator::{complete, cond, map, map_opt, opt},
@@ -11,8 +9,8 @@ use nom::{
 pub use uuid::Uuid;
 
 use crate::ebml::{
-    binary, binary_exact, binary_ref, bool, checksum, crc, elem_size, float, float_or, int, master,
-    skip_void, str, uint, uuid, vid, vint, EbmlResult, check_id,
+    binary, binary_exact, binary_ref, bool, check_id, checksum, crc, elem_size, float, float_or,
+    int, master, skip_void, str, uint, uuid, vid, vint, EbmlResult,
 };
 use crate::permutation::matroska_permutation;
 
@@ -1035,7 +1033,7 @@ pub fn chapters(input: &[u8]) -> EbmlResult<SegmentElement> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditionEntry {
-    pub uid: Option<NonZeroU64>,
+    pub uid: Option<u64>,
     pub flag_default: bool,
     pub flag_ordered: bool,
     pub chapter_atoms: Vec<ChapterAtom>,
@@ -1053,7 +1051,7 @@ pub fn edition_entry(input: &[u8]) -> EbmlResult<EditionEntry> {
             (
                 i,
                 EditionEntry {
-                    uid: t.0.and_then(NonZeroU64::new),
+                    uid: t.0,
                     flag_default: t.1.unwrap_or(false),
                     flag_ordered: t.2.unwrap_or(false),
                     chapter_atoms: t.3,
@@ -1211,29 +1209,29 @@ pub struct AttachedFile {
     pub name: String,
     pub media_type: String,
     pub data: Vec<u8>,
-    pub uid: NonZeroU64,
+    pub uid: u64,
 }
 
 pub fn attached_file(input: &[u8]) -> EbmlResult<AttachedFile> {
     master(0x61A7, |inp| {
         matroska_permutation((
-            str(0x467E),
+            opt(str(0x467E)),
             str(0x466E),
             str(0x4660),
             binary(0x465C),
             uint(0x46AE),
         ))(inp)
-        .and_then(|(i, t)| {
-            Ok((
+        .map(|(i, t)| {
+            (
                 i,
                 AttachedFile {
                     description: t.0,
-                    name: value_error(0x466E, t.1)?,
-                    media_type: value_error(0x4660, t.2)?,
-                    data: value_error(0x465C, t.3)?,
-                    uid: value_error(0x46AE, t.4.and_then(NonZeroU64::new))?,
+                    name: t.1,
+                    media_type: t.2,
+                    data: t.3,
+                    uid: t.4,
                 },
-            ))
+            )
         })
     })(input)
 }
