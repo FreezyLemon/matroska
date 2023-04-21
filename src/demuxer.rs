@@ -458,7 +458,10 @@ mod tests {
                         language: String::from("eng"),
                         language_ietf: None,
                         codec_id: String::from("A_OPUS"),
-                        codec_private: None,
+                        codec_private: Some(vec![
+                            0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 0x01, 0x01, 0x38, 0x01,
+                            0x80, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        ]),
                         codec_name: None,
                         attachment_link: None,
                         codec_settings: None,
