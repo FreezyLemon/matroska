@@ -16,7 +16,7 @@ pub enum SegmentElement<'a> {
     SeekHead(SeekHead),
     Info(Info),
     Tracks(Tracks),
-    // Chapters(Chapters),
+    Chapters(Chapters),
     Cluster(Cluster<'a>),
     // Cues(Cues),
     // Attachments(Attachments),
@@ -54,7 +54,7 @@ pub fn segment_element(input: &[u8]) -> EbmlResult<SegmentElement> {
             0x114D9B74 => sub_element::<elements::SeekHead>(i).map(|(i, sh)| (i, SeekHead(sh))),
             0x1549A966 => sub_element::<elements::Info>(i).map(|(i, info)| (i, Info(info))),
             0x1F43B675 => sub_element::<elements::Cluster>(i).map(|(i, cl)| (i, Cluster(cl))),
-            // 0x1043A770 => sub_element(|i| Ok((i, SegmentElement::Chapters(Chapters {}))))(i),
+            0x1043A770 => sub_element::<elements::Chapters>(i).map(|(i, ch)| (i, Chapters(ch))),
             // 0x1254C367 => sub_element(|i| Ok((i, SegmentElement::Tags(Tags {}))))(i),
             // 0x1941A469 => sub_element(|i| Ok((i, SegmentElement::Attachments(Attachments {}))))(i),
             0x1654AE6B => sub_element::<elements::Tracks>(i).map(|(i, tr)| (i, Tracks(tr))),
@@ -112,6 +112,72 @@ impl_ebml_master! {
         [0x7BA9] title: (Option<String>),
         [0x4D80] muxing_app: (String),
         [0x5741] writing_app: (String),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0x1043A770
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct Chapters {
+        [0x45B9] edition_entry: (Vec<EditionEntry>),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0x45B9
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct EditionEntry {
+        [0x45BC] uid: (Option<u64>),
+        [0x45DB] flag_default: (bool) = false,
+        [0x45DD] flag_ordered: (bool) = false,
+        [0xB6] chapter_atoms: (Vec<ChapterAtom>),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0xB6
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct ChapterAtom {
+        [0x73C4] uid: (u64),
+        [0x5654] string_uid: (Option<String>),
+        [0x91] time_start: (u64),
+        [0x92] time_end: (Option<u64>),
+        [0x98] flag_hidden: (bool) = false,
+        [0x6E67] segment_uid: (Option<Uuid>),
+        [0x6EBC] segment_edition_uid: (Option<u64>),
+        [0x63C3] physical_equiv: (Option<u64>),
+        [0x80] display: (Option<ChapterDisplay>),
+        [0x6944] process: (Option<ChapterProcess>),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0x80
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct ChapterDisplay {
+        [0x85] string: (String),
+        [0x437C] language: (Vec<String>),
+        [0x437D] language_bcp47: (Vec<String>),
+        [0x437E] country: (Vec<String>),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0x6944
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct ChapterProcess {
+        [0x6955] codec_id: (u64),
+        [0x450D] private: (Option<Vec<u8>>),
+        [0x6911] command: (Vec<ChapterProcessCommand>),
+    }
+}
+
+impl_ebml_master! {
+    // Element ID 0x6911
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct ChapterProcessCommand {
+        [0x6922] time: (u64),
+        [0x6933] data: (Vec<u8>),
     }
 }
 
