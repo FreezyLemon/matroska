@@ -12,6 +12,10 @@ macro_rules! unwrap_parser {
     ($field_id:literal, Option<$field_type:ty>) => {
         $crate::ebml::macros::unwrap_parser!($field_id, $field_type)
     };
+    // Edge case: Vec<u8> is binary, not a collection of normal EBML Elements
+    ($field_id:literal, Vec<u8>) => {
+        $crate::ebml::ebml_element::<Vec<u8>>($field_id)
+    };
     ($field_id:literal, Vec<$field_type:ty>) => {
         nom::multi::many0($crate::ebml::macros::unwrap_parser!($field_id, $field_type))
     };
