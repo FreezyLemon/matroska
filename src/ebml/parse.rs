@@ -45,6 +45,17 @@ impl<'a, T: Int> EbmlParsable<'a> for T {
     }
 }
 
+impl<'a> EbmlParsable<'a> for bool {
+    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
+        // "flags" are represented by uints
+        if data.len() > 8 {
+            return Err(ErrorKind::UintTooWide);
+        }
+
+        Ok(data.iter().any(|&b| b != 0))
+    }
+}
+
 // FIXME: Define and double-check float parsing behaviour in error cases
 // FIXME: Also implement a test suite for that
 impl<'a> EbmlParsable<'a> for f64 {
