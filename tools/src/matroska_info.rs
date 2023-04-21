@@ -302,6 +302,16 @@ fn run(filename: &str) -> Result<(), InfoError> {
                         "seek head, info or tracks element".to_string(),
                     ));
                 }
+                SegmentElement::Chapters(c) => {
+                    // FIXME: Compare to mkvinfo and fix
+                    println!("|+ Chapters");
+                    for entry in c.edition_entry {
+                        println!("|+   Entry");
+                        if let Some(uid) = entry.uid {
+                            println!("|+     UID: {uid}");
+                        }
+                    }
+                }
                 SegmentElement::Cluster(c) => {
                     println!("|+ Cluster");
                     println!("|+   Timestamp: {}", c.timestamp);
