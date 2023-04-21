@@ -167,7 +167,7 @@ pub fn void(input: &[u8]) -> EbmlResult<&[u8]> {
 pub fn skip_master(input: &[u8]) -> EbmlResult<u32> {
     let (i, (id, size, crc)) = tuple((vid, elem_size, crc))(input)?;
     let size = if crc.is_some() { size - 6 } else { size };
-    checksum(crc, take(size))(i)?;
+    let (i, _) = checksum(crc, take(size))(i)?;
     Ok((i, id))
 }
 

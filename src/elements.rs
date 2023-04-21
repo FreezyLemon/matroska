@@ -130,7 +130,7 @@ impl_ebml_master! {
         [0x45BC] uid: (Option<u64>),
         [0x45DB] flag_default: (bool) = false,
         [0x45DD] flag_ordered: (bool) = false,
-        [0xB6] chapter_atoms: (Vec<ChapterAtom>),
+        [0xB6] chapter_atoms: (ChapterAtom),
     }
 }
 
@@ -587,9 +587,11 @@ impl_ebml_master! {
 #[cfg(test)]
 #[allow(non_upper_case_globals)]
 mod tests {
-    use std::cmp::min;
+    use std::{cmp::min, path::Path};
 
     use nom::{HexDisplay, Offset};
+
+    use crate::ebml::skip_master;
 
     use super::*;
 
@@ -680,6 +682,114 @@ mod tests {
                     println!("[{index}] {e:#?}:\n{}", (webm[index..max_index]).to_hex(16));
                     break;
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn chapters_element() {
+        const FILES: &[&'static str] = &["simple.mkv", "ordered.mkv", "linked.mkv"];
+
+        let chapters = &[
+            Chapters {
+                edition_entry: vec![EditionEntry {
+                    uid: Some(2906622091),
+                    flag_default: true,
+                    flag_ordered: false,
+                    chapter_atoms: ChapterAtom {
+                        uid: 236737181,
+                        string_uid: None,
+                        time_start: 0,
+                        time_end: None,
+                        flag_hidden: false,
+                        segment_uid: None,
+                        segment_edition_uid: None,
+                        physical_equiv: None,
+                        display: Some(ChapterDisplay {
+                            string: String::from("Intro"),
+                            language: vec![String::from("eng")],
+                            language_bcp47: vec![String::from("en")],
+                            country: vec![],
+                        }),
+                        process: None,
+                    },
+                }],
+            },
+            Chapters {
+                edition_entry: vec![EditionEntry {
+                    uid: Some(2906622092),
+                    flag_default: true,
+                    flag_ordered: true,
+                    chapter_atoms: ChapterAtom {
+                        uid: 3143058099,
+                        string_uid: None,
+                        time_start: 0,
+                        time_end: Some(510000000),
+                        flag_hidden: false,
+                        segment_uid: None,
+                        segment_edition_uid: None,
+                        physical_equiv: None,
+                        display: Some(ChapterDisplay {
+                            string: String::from("Testing"),
+                            language: vec![String::from("eng")],
+                            language_bcp47: vec![String::from("en")],
+                            country: vec![],
+                        }),
+                        process: None,
+                    },
+                }],
+            },
+            Chapters {
+                edition_entry: vec![EditionEntry {
+                    uid: Some(2906622092),
+                    flag_default: true,
+                    flag_ordered: true,
+                    chapter_atoms: ChapterAtom {
+                        uid: 3143058099,
+                        string_uid: None,
+                        time_start: 0,
+                        time_end: Some(408000000),
+                        flag_hidden: false,
+                        segment_uid: None,
+                        segment_edition_uid: None,
+                        physical_equiv: None,
+                        display: Some(ChapterDisplay {
+                            string: String::from("Testing"),
+                            language: vec![String::from("eng")],
+                            language_bcp47: vec![String::from("en")],
+                            country: vec![],
+                        }),
+                        process: None,
+                    },
+                }],
+            },
+        ];
+
+        for (file, expected) in FILES.into_iter().zip(chapters) {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets")
+                .join("chapters")
+                .join(file);
+
+            println!("Testing {}", path.to_string_lossy());
+            let input = std::fs::read(path).expect("can read file");
+
+            // skip EBML header
+            let (input, skipped) =
+                skip_master(&input).expect("there should be a Master Element here");
+            assert_eq!(0x1A45DFA3, skipped);
+
+            // start Segment Element
+            let (mut bytes, _) = segment(input).expect("there should be a Segment Element here");
+
+            loop {
+                let (rest, element) = segment_element(bytes).unwrap();
+                if let SegmentElement::Chapters(ref c) = element {
+                    assert_eq!(expected, c);
+                    break;
+                }
+
+                bytes = rest;
             }
         }
     }
