@@ -80,7 +80,7 @@ macro_rules! permutation_trait(
 // Manual implementation for a single Parser (not covered by tuples)
 impl<'a, A, FnA: Parser<&'a [u8], A, Error>> Permutation<'a, Option<A>> for FnA {
     fn permutation(&mut self, mut input: &'a [u8]) -> IResult<&'a [u8], Option<A>, Error> {
-        while let Ok((i, _)) = crate::ebml::void(input) {
+        while let Ok((i, _)) = crate::ebml::parse::void(input) {
             input = i;
         }
 
@@ -107,7 +107,7 @@ macro_rules! permutation_trait_impl(
           let l = input.len();
 
           // Skip Void Element
-          if let Ok((i, _)) = crate::ebml::void(input) {
+          if let Ok((i, _)) = crate::ebml::parse::void(input) {
             input = i;
           }
 
@@ -117,7 +117,7 @@ macro_rules! permutation_trait_impl(
           if l == input.len() {
             // Skip unknown Element if possible.
             if let Error { id: _, kind: $crate::ebml::ErrorKind::MissingElement } = err {
-              if let Ok((i, id)) = $crate::ebml::skip_element(input) {
+              if let Ok((i, id)) = $crate::ebml::parse::skip_element(input) {
                 if let Some(name) = $crate::ebml::DEPRECATED.get(&id) {
                   log::warn!("Skipped deprecated Element '{name}' ({id:#0X})");
                 } else {

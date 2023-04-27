@@ -91,7 +91,7 @@ fn floats() {
 fn variable_integer() {
     let val01 = [0b10000000];
 
-    match vint(&val01) {
+    match parse::vint(&val01) {
         Ok((_, v)) => assert!(0 == v),
         _ => panic!(),
     }

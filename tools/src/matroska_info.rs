@@ -9,7 +9,6 @@ use nom::{Err, Offset};
 
 use matroska::ebml::ebml_header;
 use matroska::elements::{segment, segment_element, SegmentElement, Uuid};
-use matroska::serializer::ebml::EbmlSize;
 
 #[derive(Debug, Error)]
 pub enum InfoError {
@@ -132,11 +131,11 @@ fn run(filename: &str) -> Result<(), InfoError> {
                 SegmentElement::SeekHead(s) => {
                     println!("|+ Seek head at {:#0x} size {}", 0x0, b.data().offset(i));
                     for seek in s.positions.iter() {
-                        let element_size = seek.size(0x4DBB);
-                        let id_size = seek.id.size(0x53AB);
-                        let position_size = seek.position.size(0x53AC);
-
-                        println!("| + Seek entry size {}", element_size);
+                        // FIXME: Reimplement
+                        // let element_size = seek.size(0x4DBB);
+                        // let id_size = seek.id.size(0x53AB);
+                        // let position_size = seek.position.size(0x53AC);
+                        // println!("| + Seek entry size {}", element_size);
 
                         // FIXME: Make the formatting similar to mkvinfo again
                         print!(
@@ -154,11 +153,8 @@ fn run(filename: &str) -> Result<(), InfoError> {
                             _ => "",
                         };
 
-                        println!("{} at {:#0x} size {}", name, 0x0, id_size);
-                        println!(
-                            "|  + Seek position: {} size {}",
-                            seek.position, position_size
-                        );
+                        println!("{name} at {:#0x}", 0x0);
+                        println!("|  + Seek position: {}", seek.position);
                     }
 
                     if seek_head.is_some() {

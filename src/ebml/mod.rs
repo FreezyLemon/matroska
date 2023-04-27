@@ -1,12 +1,14 @@
 mod error;
 pub(crate) mod macros;
-mod parse;
+pub(crate) mod parse;
+pub(crate) mod serialize;
 
 #[cfg(test)]
 mod tests;
 
 pub use self::error::{ebml_err, Error, ErrorKind};
-pub use self::parse::*;
+pub use self::parse::{Date, EbmlParsable, EbmlResult};
+pub use self::serialize::EbmlSerializable;
 
 self::macros::impl_ebml_master! {
     // Element ID 0x1A45DFA3
@@ -23,7 +25,7 @@ self::macros::impl_ebml_master! {
 }
 
 pub fn ebml_header(input: &[u8]) -> EbmlResult<EbmlHeader> {
-    ebml_element(0x1A45DFA3)(input)
+    crate::ebml::parse::ebml_element(0x1A45DFA3)(input)
 }
 
 /// Map of known deprecated Element IDs and their EBML Paths

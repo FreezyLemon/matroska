@@ -4,7 +4,7 @@ macro_rules! unwrap_value {
         let $field_name = $field_name.unwrap_or($default);
     };
     ($field_name:ident, $field_type:ty, $field_id:literal) => {
-        let $field_name = $crate::ebml::get_required($field_name, $field_id)?;
+        let $field_name = $crate::ebml::parse::get_required($field_name, $field_id)?;
     };
 }
 
@@ -19,7 +19,7 @@ macro_rules! unwrap_parser {
         nom::multi::many1($crate::ebml::macros::unwrap_parser!($field_id, $field_type))
     };
     ($field_id:literal, $field_type:ty) => {
-        $crate::ebml::ebml_element::<$field_type>($field_id)
+        $crate::ebml::parse::ebml_element::<$field_type>($field_id)
     };
 }
 
@@ -62,6 +62,24 @@ macro_rules! impl_ebml_master {
                         $($field_name),*
                     }
                 )
+            }
+        }
+
+        impl$(<$lifetime>)? $crate::ebml::EbmlSerializable for $name$(<$lifetime>)? {
+            fn serialize<W: std::io::Write>(&self, w: cookie_factory::WriteContext<W>, id: core::num::NonZeroU32) -> cookie_factory::GenResult<W> {
+                let w = $crate::ebml::serialize::vid(id)(w)?;
+
+                let buf = cookie_factory::WriteContext::from(std::vec::Vec::with_capacity(64));
+
+                $(
+                    let buf = self.$field_name.serialize(
+                        buf,
+                        core::num::NonZeroU32::new($field_id).unwrap(),
+                    )?;
+                )+
+
+                let w = $crate::ebml::serialize::vint(buf.position as u64)(w)?;
+                cookie_factory::combinator::slice(buf.write)(w)
             }
         }
     };

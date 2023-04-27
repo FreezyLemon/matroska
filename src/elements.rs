@@ -7,8 +7,11 @@ use nom::{
 
 pub use uuid::Uuid;
 
-use crate::ebml::{check_id, checksum, crc, elem_size, vid, vint, EbmlParsable, EbmlResult, Error};
 use crate::ebml::{macros::impl_ebml_master, Date};
+use crate::ebml::{
+    parse::{check_id, checksum, crc, elem_size, vid, vint, EbmlParsable, EbmlResult},
+    Error,
+};
 use crate::elements;
 
 #[derive(Debug, Clone, PartialEq)]

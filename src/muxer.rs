@@ -1,25 +1,17 @@
-use std::io::Write;
 use std::sync::Arc;
+use std::{io::Write, num::NonZeroU32};
 
-use cookie_factory::GenError;
-use log::error;
+use cookie_factory::SerializeFn;
 
 use av_data::{packet::Packet, params::MediaKind, value::Value};
 use av_format::{common::GlobalInfo, error::*, muxer::*, stream::Stream};
 
+use crate::ebml::serialize;
 use crate::{
-    ebml::EbmlHeader,
+    ebml::{EbmlHeader, EbmlSerializable},
     elements::{
-        Audio, Cluster, Colour, Info, Lacing, Seek, SeekHead, SimpleBlock, TrackEntry, TrackType,
-        Tracks, Video,
-    },
-    serializer::{
-        cookie_utils::tuple,
-        ebml::{gen_ebml_header, EbmlSize},
-        elements::{
-            gen_cluster, gen_info, gen_seek_head, gen_segment_header_unknown_size,
-            gen_simple_block_header, gen_tracks,
-        },
+        Audio, Cluster, Colour, Info, Lacing, SeekHead, SimpleBlock, TrackEntry, TrackType, Tracks,
+        Video,
     },
 };
 
@@ -80,156 +72,48 @@ impl MkvMuxer {
     }
 
     pub fn write_ebml_header(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let mut origin = (buf).as_ptr() as usize;
-
-        let mut needed = 0usize;
-        let offset;
-        loop {
-            if needed > 0 {
-                let len = needed + buf.len();
-                buf.resize(len, 0);
-                origin = (buf).as_ptr() as usize;
-            }
-
-            match gen_ebml_header(&self.header)((buf, 0)) {
-                Err(GenError::BufferTooSmall(sz)) => {
-                    needed = sz;
-                }
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(Error::InvalidData);
-                }
-                Ok((sl, sz)) => {
-                    offset = sl.as_ptr() as usize + sz - origin;
-                    break;
-                }
-            };
-        }
-        buf.truncate(offset);
+        let written = try_write(buf, |w| {
+            self.header
+                .serialize(w, NonZeroU32::new(0x1A45DFA3).unwrap())
+        })?;
+        buf.truncate(written as usize);
 
         Ok(())
     }
 
     pub fn write_segment_header(&mut self, buf: &mut Vec<u8>, _size: usize) -> Result<()> {
-        let mut origin = (buf).as_ptr() as usize;
-
-        let mut needed = 0usize;
-        let offset;
-        loop {
-            if needed > 0 {
-                let len = needed + buf.len();
-                buf.resize(len, 0);
-                origin = (buf).as_ptr() as usize;
-            }
-
-            match gen_segment_header_unknown_size()((buf, 0)) {
-                Err(GenError::BufferTooSmall(sz)) => {
-                    needed = sz;
-                }
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(Error::InvalidData);
-                }
-                Ok((sl, sz)) => {
-                    offset = sl.as_ptr() as usize + sz - origin;
-                    break;
-                }
-            };
-        }
-        buf.truncate(offset);
+        let written = try_write(buf, serialize::segment_element)?;
+        buf.truncate(written as usize);
 
         Ok(())
     }
 
     pub fn write_seek_head(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let mut origin = (buf).as_ptr() as usize;
-
-        let mut needed = 0usize;
-        let offset;
-        loop {
-            if needed > 0 {
-                let len = needed + buf.len();
-                buf.resize(len, 0);
-                origin = (buf).as_ptr() as usize;
-            }
-
-            match gen_seek_head(&self.seek_head)((buf, 0)) {
-                Err(GenError::BufferTooSmall(sz)) => {
-                    needed = sz;
-                }
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(Error::InvalidData);
-                }
-                Ok((sl, sz)) => {
-                    offset = sl.as_ptr() as usize + sz - origin;
-                    break;
-                }
-            };
-        }
-        buf.truncate(offset);
+        let written = try_write(buf, |w| {
+            self.seek_head
+                .serialize(w, NonZeroU32::new(0x114D9B74).unwrap())
+        })?;
+        buf.truncate(written as usize);
 
         Ok(())
     }
 
     pub fn write_info(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        if let Some(info) = self.info.as_ref() {
-            let mut origin = (buf).as_ptr() as usize;
-            let mut needed = 0usize;
-            let offset;
-            loop {
-                if needed > 0 {
-                    let len = needed + buf.len();
-                    buf.resize(len, 0);
-                    origin = (buf).as_ptr() as usize;
-                }
-
-                match gen_info(info)((buf, 0)) {
-                    Err(GenError::BufferTooSmall(sz)) => {
-                        needed = sz;
-                    }
-                    Err(e) => {
-                        error!("{:?}", e);
-                        return Err(Error::InvalidData);
-                    }
-                    Ok((sl, sz)) => {
-                        offset = sl.as_ptr() as usize + sz - origin;
-                        break;
-                    }
-                };
-            }
-            buf.truncate(offset);
+        if let Some(ref info) = self.info {
+            let written = try_write(buf, |w| {
+                info.serialize(w, NonZeroU32::new(0x1549A966).unwrap())
+            })?;
+            buf.truncate(written as usize);
         }
         Ok(())
     }
 
     pub fn write_tracks(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        if let Some(tracks) = self.tracks.as_ref() {
-            let mut origin = (buf).as_ptr() as usize;
-            let mut needed = 0usize;
-            let offset;
-            loop {
-                if needed > 0 {
-                    let len = needed + buf.len();
-                    buf.resize(len, 0);
-                    origin = (buf).as_ptr() as usize;
-                }
-
-                match gen_tracks(tracks)((buf, 0)) {
-                    Err(GenError::BufferTooSmall(sz)) => {
-                        needed = sz;
-                    }
-                    Err(e) => {
-                        error!("{:?}", e);
-                        return Err(Error::InvalidData);
-                    }
-                    Ok((sl, sz)) => {
-                        offset = sl.as_ptr() as usize + sz - origin;
-                        break;
-                    }
-                };
-            }
-            buf.truncate(offset);
+        if let Some(ref tracks) = self.tracks {
+            let written = try_write(buf, |w| {
+                tracks.serialize(w, NonZeroU32::new(0x1654AE6B).unwrap())
+            })?;
+            buf.truncate(written as usize);
         }
         Ok(())
     }
@@ -256,28 +140,30 @@ impl Muxer for MkvMuxer {
         let mut tracks = Vec::new();
         self.write_tracks(&mut tracks)?;
 
-        let info_seek = Seek {
-            id: [0x15, 0x49, 0xA9, 0x66],
-            position: 0,
-        };
-        let tracks_seek = Seek {
-            id: [0x16, 0x54, 0xAE, 0x6B],
-            position: 0,
-        };
-        let cluster_seek = Seek {
-            id: [0x1F, 0x43, 0xB6, 0x75],
-            position: 0,
-        };
-        self.seek_head.positions.push(info_seek);
-        self.seek_head.positions.push(tracks_seek);
-        self.seek_head.positions.push(cluster_seek);
+        // FIXME: Reintroduce this
+        // let info_seek = Seek {
+        //     id: [0x15, 0x49, 0xA9, 0x66],
+        //     position: 0,
+        // };
+        // let tracks_seek = Seek {
+        //     id: [0x16, 0x54, 0xAE, 0x6B],
+        //     position: 0,
+        // };
+        // let cluster_seek = Seek {
+        //     id: [0x1F, 0x43, 0xB6, 0x75],
+        //     position: 0,
+        // };
 
-        self.seek_head.positions[0].position = self.seek_head.size(0x114D9B74) as u64;
-        self.seek_head.positions[1].position =
-            (self.seek_head.size(0x114D9B74) + info.size(0x1549A966)) as u64;
-        self.seek_head.positions[2].position = (self.seek_head.size(0x114D9B74)
-            + info.size(0x1549A966)
-            + tracks.size(0x1654AE6B)) as u64;
+        // self.seek_head.positions.push(info_seek);
+        // self.seek_head.positions.push(tracks_seek);
+        // self.seek_head.positions.push(cluster_seek);
+
+        // self.seek_head.positions[0].position = self.seek_head.size(0x114D9B74) as u64;
+        // self.seek_head.positions[1].position =
+        //     (self.seek_head.size(0x114D9B74) + info.size(0x1549A966)) as u64;
+        // self.seek_head.positions[2].position = (self.seek_head.size(0x114D9B74)
+        //     + info.size(0x1549A966)
+        //     + tracks.size(0x1654AE6B)) as u64;
 
         let mut seek_head = Vec::new();
         self.write_seek_head(&mut seek_head)?;
@@ -303,31 +189,8 @@ impl Muxer for MkvMuxer {
             discardable: false,
         };
 
-        let mut origin = (v).as_ptr() as usize;
-        let mut needed = 0usize;
-        let offset;
-        loop {
-            if needed > 0 {
-                let len = needed + v.len();
-                v.resize(len, 0);
-                origin = (v).as_ptr() as usize;
-            }
-
-            match gen_simple_block_header(&s)((&mut v, 0)) {
-                Err(GenError::BufferTooSmall(sz)) => {
-                    needed = sz;
-                }
-                Err(e) => {
-                    error!("{:?}", e);
-                    return Err(Error::InvalidData);
-                }
-                Ok((sl, sz)) => {
-                    offset = sl.as_ptr() as usize + sz - origin;
-                    break;
-                }
-            };
-        }
-        v.truncate(offset);
+        let written = try_write(&mut v, serialize::simple_block_header(&s))?;
+        v.truncate(written as usize);
 
         v.extend(pkt.data.iter());
         let len = v.len();
@@ -352,32 +215,11 @@ impl Muxer for MkvMuxer {
                     block_group: Vec::new(),
                 };
 
-                let mut buf: Vec<u8> = vec![0; cluster.size(0x1F43B675)];
-                let mut origin = (buf).as_ptr() as usize;
-                let mut needed = 0usize;
-                let offset;
-                loop {
-                    if needed > 0 {
-                        let len = needed + buf.len();
-                        buf.resize(len, 0);
-                        origin = (buf).as_ptr() as usize;
-                    }
-
-                    match gen_cluster(&cluster)((&mut buf, 0)) {
-                        Err(GenError::BufferTooSmall(sz)) => {
-                            needed = sz;
-                        }
-                        Err(e) => {
-                            error!("{:?}", e);
-                            return Err(Error::InvalidData);
-                        }
-                        Ok((sl, sz)) => {
-                            offset = sl.as_ptr() as usize + sz - origin;
-                            break;
-                        }
-                    };
-                }
-                buf.truncate(offset);
+                let mut buf = vec![0u8; 16];
+                let written = try_write(&mut buf, |w| {
+                    cluster.serialize(w, NonZeroU32::new(0x1F43B675).unwrap())
+                })?;
+                buf.truncate(written as usize);
                 out.write_all(&buf).unwrap();
             }
 
@@ -402,32 +244,12 @@ impl Muxer for MkvMuxer {
                 block_group: Vec::new(),
             };
 
-            let mut buf: Vec<u8> = vec![0; cluster.size(0x1F43B675)];
-            let mut origin = (buf).as_ptr() as usize;
-            let mut needed = 0usize;
-            let offset;
-            loop {
-                if needed > 0 {
-                    let len = needed + buf.len();
-                    buf.resize(len, 0);
-                    origin = (buf).as_ptr() as usize;
-                }
+            let mut buf = vec![0u8; 16];
+            let written = try_write(&mut buf, |w| {
+                cluster.serialize(w, NonZeroU32::new(0x1F43B675).unwrap())
+            })?;
+            buf.truncate(written as usize);
 
-                match gen_cluster(&cluster)((&mut buf, 0)) {
-                    Err(GenError::BufferTooSmall(sz)) => {
-                        needed = sz;
-                    }
-                    Err(e) => {
-                        error!("{:?}", e);
-                        return Err(Error::InvalidData);
-                    }
-                    Ok((sl, sz)) => {
-                        offset = sl.as_ptr() as usize + sz - origin;
-                        break;
-                    }
-                };
-            }
-            buf.truncate(offset);
             out.write_all(&buf).unwrap();
         }
 
@@ -453,30 +275,6 @@ impl Muxer for MkvMuxer {
     fn set_option(&mut self, _key: &str, _val: Value<'_>) -> Result<()> {
         Ok(())
     }
-}
-
-#[allow(dead_code)]
-fn offset<'a>(original: &(&'a [u8], usize), subslice: &(&'a [u8], usize)) -> usize {
-    let first = original.0.as_ptr() as usize;
-    let second = subslice.0.as_ptr() as usize;
-
-    second + subslice.1 - first - original.1
-}
-
-#[allow(dead_code)]
-fn gen_mkv_prefix<'b>(
-    input: (&'b mut [u8], usize),
-    header: &EbmlHeader,
-    seek_head: &SeekHead,
-    info: &Info,
-    tracks: &Tracks,
-) -> std::result::Result<(&'b mut [u8], usize), GenError> {
-    tuple((
-        gen_ebml_header(header),
-        gen_seek_head(seek_head),
-        gen_info(info),
-        gen_tracks(tracks),
-    ))(input)
 }
 
 pub fn stream_to_track(s: &Stream) -> TrackEntry {
@@ -537,4 +335,14 @@ pub fn stream_to_track(s: &Stream) -> TrackEntry {
     }
 
     t
+}
+
+fn try_write<'a, F>(buf: &'a mut Vec<u8>, f: F) -> Result<u64>
+where
+    F: SerializeFn<&'a mut Vec<u8>>,
+{
+    match f(buf.into()) {
+        Ok(ctx) => Ok(ctx.position),
+        Err(_) => Err(Error::InvalidData),
+    }
 }
