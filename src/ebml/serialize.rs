@@ -18,23 +18,23 @@ pub trait EbmlSerializable {
     fn serialize<W: Write>(&self, w: WriteContext<W>, id: NonZeroU32) -> GenResult<W>;
 }
 
-// FIXME: Calc size
 impl EbmlSerializable for u64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, id: NonZeroU32) -> GenResult<W> {
-        let sz = 8;
+        let mut sz = 8 - (self.leading_zeros() / 8) as usize;
+        
+        // FIXME: Allow zero-sized uints
+        if sz == 0 {
+            sz = 1;
+        }
         let w = vid(id)(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
     }
 }
 
-// FIXME: Calc size
 impl EbmlSerializable for u32 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, id: NonZeroU32) -> GenResult<W> {
-        let sz = 4;
-        let w = vid(id)(w)?;
-        let w = vint(sz as u64)(w)?;
-        slice(&self.to_be_bytes()[4 - sz..])(w)
+        (*self as u64).serialize(w, id)
     }
 }
 
@@ -252,6 +252,46 @@ mod tests {
             if let Some(expected_buf) = expected_output {
                 assert_eq!(buf, expected_buf);
             }
+        }
+    }
+
+    #[test]
+    fn uint_correct() {
+        // To explain the expected outputs, let's use the third test as an example:
+        // (val: 0xFF, id: 0x84) should result in: [0x84, 0x81, 0xFF, 0x00, /* more zeros */],
+        //
+        // The first byte 0x84 is the Element ID literally.
+        // The second byte 0x81 is a 1-byte long VINT representing the Element Size:
+        // 0b1000_0001 => The most significant ("first") bit is the VINT_MARKER, which
+        // shows us that the VINT is one octet/byte long. All bits after that are inter-
+        // preted as the uint value. So in this case that would be 0b000_0001, so just 1.
+        // 
+        // This shows us that we need to "take" one more octet/byte to get the value of this
+        // uint Element. So we just take the next byte (0xFF) and interpret that literally.
+        //
+        // If we need to "take" more than one octet/byte, we do it in Big-Endian order.
+        // For us, this just means "read/write the arrays/slices in order", so index ascending.
+
+        // max length = 4 (ID) + 1 (Size) + 8 (Data) = 13
+        let tests: [((u64, u32), [u8; 13]); 5] = [
+            ((0, 0x81), [0x81, 0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((1, 0x90), [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((0xFF, 0x84), [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (((4321 << 42) + 8765, 0x12AB_34CD), [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
+            ((u64::MAX, 0xABCD_EFFE), [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+        ];
+
+        for ((val, id), expected_output) in tests {
+            let mut buf = [0u8; 13];
+            let w = buf.as_mut_slice().into();
+
+            // If try_serialize fails, expected_output == None
+            assert!(
+                val.serialize(w, NonZeroU32::new(id).unwrap()).is_ok(),
+                "serialization failed for id: {id:#0X}"
+            );
+
+            assert_eq!(buf, expected_output, "id: {id:#0X}");
         }
     }
 }
