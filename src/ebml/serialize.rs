@@ -21,7 +21,7 @@ pub trait EbmlSerializable {
 impl EbmlSerializable for u64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, id: NonZeroU32) -> GenResult<W> {
         let mut sz = 8 - (self.leading_zeros() / 8) as usize;
-        
+
         // FIXME: Allow zero-sized uints
         if sz == 0 {
             sz = 1;
@@ -38,10 +38,14 @@ impl EbmlSerializable for u32 {
     }
 }
 
-// FIXME: Calc size
 impl EbmlSerializable for i64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, id: NonZeroU32) -> GenResult<W> {
-        let sz = 8;
+        if *self >= 0 {
+            return (*self as u64).serialize(w, id);
+        }
+
+        // leading_ones() - 1 because of the sign bit
+        let sz = 8 - ((self.leading_ones() - 1) / 8) as usize;
         let w = vid(id)(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
@@ -114,17 +118,6 @@ impl EbmlSerializable for uuid::Uuid {
         self.as_bytes().serialize(w, id)
     }
 }
-
-// pub fn ebml_element<W: Write, E: EbmlSerializable>(id: NonZeroU32, elem: E) -> impl SerializeFn<W> {
-//     move |output| {
-//         let w = vid(id)(output)?;
-//         let w = vint(elem.data_size())(w)?;
-//         match elem.serialize_data(w) {
-//             Ok(w) => Ok(w),
-//             Err(_) => Err(GenError::CustomError(0)),
-//         }
-//     }
-// }
 
 pub fn vint_size(val: u64) -> Result<u8, GenError> {
     for i in 1..=8 {
@@ -225,19 +218,14 @@ mod tests {
 
     #[test]
     fn vint_correct() {
+        #[rustfmt::skip]
         let tests: [(u64, Option<[u8; 8]>); 8] = [
             (0, Some([0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])),
             (1, Some([0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])),
             (127, Some([0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])),
             (128, Some([0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])),
-            (
-                1 << 35,
-                Some([0x04, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            ),
-            (
-                (1 << 56) - 1,
-                Some([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
-            ),
+            (1 << 35, Some([0x04, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])),
+            ((1 << 56) - 1, Some([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])),
             (1 << 56, None),
             (u64::MAX, None),
         ];
@@ -265,7 +253,7 @@ mod tests {
         // 0b1000_0001 => The most significant ("first") bit is the VINT_MARKER, which
         // shows us that the VINT is one octet/byte long. All bits after that are inter-
         // preted as the uint value. So in this case that would be 0b000_0001, so just 1.
-        // 
+        //
         // This shows us that we need to "take" one more octet/byte to get the value of this
         // uint Element. So we just take the next byte (0xFF) and interpret that literally.
         //
@@ -273,6 +261,7 @@ mod tests {
         // For us, this just means "read/write the arrays/slices in order", so index ascending.
 
         // max length = 4 (ID) + 1 (Size) + 8 (Data) = 13
+        #[rustfmt::skip]
         let tests: [((u64, u32), [u8; 13]); 5] = [
             ((0, 0x81), [0x81, 0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
             ((1, 0x90), [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
@@ -294,5 +283,39 @@ mod tests {
             assert_eq!(buf, expected_output, "id: {id:#0X}");
         }
     }
-}
 
+    #[test]
+    fn int_correct() {
+        // see uint_correct for an explanation of what's happening here
+        #[rustfmt::skip]
+        let tests: [((i64, u32), [u8; 13]); 11] = [
+            // x >= 0 -> equal to uint:
+            ((0, 0x81), [0x81, 0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((1, 0x90), [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((0xFF, 0x84), [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (((4321 << 42) + 8765, 0x12AB_34CD), [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
+            ((i64::MAX, 0xABCD_EFFE), [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+
+            // x < 0 -> more tests
+            ((i64::MIN, 0x82), [0x82, 0x88, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((-1, 0x83), [0x83, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((-128, 0x84), [0x84, 0x81, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((-129, 0x85), [0x85, 0x82, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((-87654321, 0x86), [0x86, 0x84, 0xFA, 0xC6, 0x80, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (((-4321 << 42) - 8765, 0x87), [0x87, 0x87, 0xBC, 0x7B, 0xFF, 0xFF, 0xFF, 0xDD, 0xC3, 0x00, 0x00, 0x00, 0x00]),
+        ];
+
+        for ((val, id), expected_output) in tests {
+            let mut buf = [0u8; 13];
+            let w = buf.as_mut_slice().into();
+
+            // If try_serialize fails, expected_output == None
+            assert!(
+                val.serialize(w, NonZeroU32::new(id).unwrap()).is_ok(),
+                "serialization failed for id: {id:#0X}"
+            );
+
+            assert_eq!(buf, expected_output, "id: {id:#0X}");
+        }
+    }
+}
