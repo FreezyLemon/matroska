@@ -237,7 +237,7 @@ pub fn u32(data: &[u8]) -> u32 {
     assert!(!data.is_empty());
     assert!(data.len() <= 4);
 
-    data.into_iter().fold(0, |acc, &b| (acc << 8) | b as u32)
+    data.iter().fold(0, |acc, &b| (acc << 8) | b as u32)
 }
 
 /// Creates a [prim@u64] from the bitstream representaton of an EBML Unsigned Integer Element.
@@ -265,7 +265,7 @@ pub fn u64(data: &[u8]) -> u64 {
     assert!(!data.is_empty());
     assert!(data.len() <= 8);
 
-    data.into_iter().fold(0, |acc, &b| (acc << 8) | b as u64)
+    data.iter().fold(0, |acc, &b| (acc << 8) | b as u64)
 }
 
 /// Creates an [prim@i64] from the bitstream representation of an EBML Signed Integer Element.
