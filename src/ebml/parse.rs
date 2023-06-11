@@ -208,14 +208,14 @@ pub fn vint(input: &[u8]) -> EbmlResult<u64> {
 /// Note that this requires a data length of 4 bytes or less, contrary to the general EBML specification
 /// of up to 8 octets per Unsigned Integer Element.
 ///
-/// You most likely want to use [u64()] instead.
+/// You most likely want to use [uint()] instead.
 ///
 /// # Panics
 /// - If data.len() is zero or greater than 4
 ///
 /// # Examples
-/// See [u64()].
-pub fn u32(data: &[u8]) -> u32 {
+/// See [uint()].
+pub fn uint_short(data: &[u8]) -> u32 {
     assert!(!data.is_empty());
     assert!(data.len() <= 4);
 
@@ -230,20 +230,20 @@ pub fn u32(data: &[u8]) -> u32 {
 /// # Examples
 /// Parsing a 5-byte unsigned integer:
 /// ```
-/// use matroska::ebml::u64;
+/// use matroska::ebml::uint;
 ///
 /// let data = [10, 42, 0, 42, 42];
-/// assert_eq!(43_654_326_826, u64(&data));
+/// assert_eq!(43_654_326_826, uint(&data));
 /// ```
 ///
 /// Trying to parse a slice that's too long will panic:
 /// ```should_panic
-/// use matroska::ebml::u64;
+/// use matroska::ebml::uint;
 ///
 /// let data = [12, 34, 56, 78, 90, 09, 87, 65, 43, 21];
-/// u64(&data);
+/// uint(&data);
 /// ```
-pub fn u64(data: &[u8]) -> u64 {
+pub fn uint(data: &[u8]) -> u64 {
     assert!(!data.is_empty());
     assert!(data.len() <= 8);
 
@@ -261,20 +261,20 @@ pub fn u64(data: &[u8]) -> u64 {
 /// # Examples
 /// Parsing a 3-byte signed integer:
 /// ```
-/// use matroska::ebml::i64;
+/// use matroska::ebml::int;
 ///
 /// let data = [255, 255, 214];
-/// assert_eq!(-42, i64(&data));
+/// assert_eq!(-42, int(&data));
 /// ```
 ///
 /// Trying to parse an empty slice will panic:
 /// ```should_panic
-/// use matroska::ebml::i64;
+/// use matroska::ebml::int;
 ///
 /// let data = [];
-/// i64(&data);
+/// int(&data);
 /// ```
-pub fn i64(data: &[u8]) -> i64 {
+pub fn int(data: &[u8]) -> i64 {
     assert!(!data.is_empty());
     assert!(data.len() <= 8);
 
@@ -319,7 +319,7 @@ pub fn vid(input: &[u8]) -> EbmlResult<u32> {
     }
 
     if len <= 4 {
-        map(take(len), u32)(input)
+        map(take(len), uint_short)(input)
     } else {
         ebml_err(0, ErrorKind::IDTooWide)
     }
