@@ -225,12 +225,12 @@ pub fn vint(input: &[u8]) -> EbmlResult<u64> {
 /// Creates a [prim@u32] from the bitstream representaton of an EBML Unsigned Integer Element.
 /// Note that this requires a data length of 4 bytes or less, contrary to the general EBML specification
 /// of up to 8 octets per Unsigned Integer Element.
-/// 
+///
 /// You most likely want to use [u64()] instead.
-/// 
+///
 /// # Panics
 /// - If data.len() is zero or greater than 4
-/// 
+///
 /// # Examples
 /// See [u64()].
 pub fn u32(data: &[u8]) -> u32 {
@@ -241,19 +241,23 @@ pub fn u32(data: &[u8]) -> u32 {
 }
 
 /// Creates a [prim@u64] from the bitstream representaton of an EBML Unsigned Integer Element.
-/// 
+///
 /// # Panics
 /// - If data.len() is zero or greater than 8
-/// 
+///
 /// # Examples
 /// Parsing a 5-byte unsigned integer:
 /// ```
+/// use matroska::ebml::u64;
+///
 /// let data = [10, 42, 0, 42, 42];
 /// assert_eq!(43_654_326_826, u64(&data));
 /// ```
-/// 
+///
 /// Trying to parse a slice that's too long will panic:
 /// ```should_panic
+/// use matroska::ebml::u64;
+///
 /// let data = [12, 34, 56, 78, 90, 09, 87, 65, 43, 21];
 /// u64(&data);
 /// ```
@@ -265,22 +269,26 @@ pub fn u64(data: &[u8]) -> u64 {
 }
 
 /// Creates an [prim@i64] from the bitstream representation of an EBML Signed Integer Element.
-/// 
+///
 /// This function will panic for invalid data lengths, so you should ensure correct input data and handle
 /// errors before calling this function.
-/// 
+///
 /// # Panics
 /// - If data.len() is zero or greater than 8
-/// 
+///
 /// # Examples
 /// Parsing a 3-byte signed integer:
 /// ```
+/// use matroska::ebml::i64;
+///
 /// let data = [255, 255, 214];
 /// assert_eq!(-42, i64(&data));
 /// ```
-/// 
+///
 /// Trying to parse an empty slice will panic:
 /// ```should_panic
+/// use matroska::ebml::i64;
+///
 /// let data = [];
 /// i64(&data);
 /// ```
@@ -288,18 +296,17 @@ pub fn i64(data: &[u8]) -> i64 {
     assert!(!data.is_empty());
     assert!(data.len() <= 8);
 
-    let mut bytes = data.into_iter();
-    let first = bytes.next().unwrap();
-    let negative = (first & 0b1000_0000) != 0;
-    
-    let init = (first & 0b0111_1111) as i64;
-    let res = bytes.fold(init, |acc, &b| acc << 8 | b as i64);
+    let negative = (data[0] & 0b1000_0000) != 0;
 
-    if negative {
-        res | 1 << 63
+    let init = if negative {
+        // set all bits to one so we don't need to
+        // handle "empty bytes" at the end
+        -1
     } else {
-        res
-    }
+        0
+    };
+
+    data.iter().fold(init, |acc, &b| acc << 8 | b as i64)
 }
 
 // The take combinator can only accept `usize`, so we need to make
