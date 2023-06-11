@@ -320,17 +320,18 @@ pub fn elem_size(input: &[u8]) -> EbmlResult<usize> {
 // do not drop the marker bit.
 pub fn vid(input: &[u8]) -> EbmlResult<u32> {
     if input.is_empty() {
-        return Err(Incomplete(Needed::new(1)));
+        return Err(Incomplete(Needed::Unknown));
     }
 
     let len = 1 + input[0].leading_zeros() as usize;
 
-    if input.len() <= len {
-        return Err(Incomplete(Needed::new(1)));
+    if input.len() < len {
+        return Err(Incomplete(Needed::new(len - input.len())));
     }
 
-    match u32::try_parse(&input[..len]) {
-        Ok(id) => Ok((&input[len..], id)),
-        Err(_) => ebml_err(0, ErrorKind::IDTooWide),
+    if len <= 4 {
+        map(take(len), u32)(input)
+    } else {
+        ebml_err(0, ErrorKind::IDTooWide)
     }
 }
