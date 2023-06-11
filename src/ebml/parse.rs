@@ -189,21 +189,21 @@ where
 
 pub fn vint(input: &[u8]) -> EbmlResult<u64> {
     if input.is_empty() {
-        return Err(Incomplete(Needed::new(1)));
+        return Err(Incomplete(Needed::Unknown));
     }
 
     let v = input[0];
-    let len = v.leading_zeros();
+    let len = 1 + v.leading_zeros() as usize;
 
-    if len == 8 {
+    if len > 8 {
         return ebml_err(0, ErrorKind::VintTooWide);
     }
 
-    if input.len() <= len as usize {
+    if input.len() < len {
         return Err(Incomplete(Needed::new(1)));
     }
 
-    let mut val = u64::from(v ^ (1 << (7 - len)));
+    let mut val = u64::from(v ^ (1 << (8 - len)));
 
     trace!(
         "vint {:08b} {:08b} {:08b} {}",
@@ -213,13 +213,13 @@ pub fn vint(input: &[u8]) -> EbmlResult<u64> {
         len
     );
 
-    for i in 0..len as usize {
-        val = (val << 8) | u64::from(input[i + 1]);
+    for i in 1..len {
+        val = (val << 8) | u64::from(input[i]);
     }
 
     trace!("     result {:08x}", val);
 
-    Ok((&input[len as usize + 1..], val))
+    Ok((&input[len..], val))
 }
 
 // The take combinator can only accept `usize`, so we need to make
