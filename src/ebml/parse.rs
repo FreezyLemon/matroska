@@ -1,10 +1,10 @@
 use std::ops::{BitOr, Shl};
 
 use crc::{Algorithm, Crc};
-use log::trace;
 use nom::{
     bytes::streaming::take,
     combinator::{complete, map, map_res, opt},
+    number::streaming::u8,
     sequence::{preceded, tuple},
     Err::Incomplete,
     Needed, Parser,
@@ -188,38 +188,20 @@ where
 }
 
 pub fn vint(input: &[u8]) -> EbmlResult<u64> {
-    if input.is_empty() {
-        return Err(Incomplete(Needed::Unknown));
-    }
-
-    let v = input[0];
-    let len = 1 + v.leading_zeros() as usize;
+    // TODO: maybe map_err to Needed::Unknown?
+    let (i, first) = u8(input)?;
+    let len = 1 + first.leading_zeros() as usize;
 
     if len > 8 {
         return ebml_err(0, ErrorKind::VintTooWide);
     }
 
-    if input.len() < len {
-        return Err(Incomplete(Needed::new(1)));
-    }
+    let (i, data) = take(len - 1)(i)?;
+    let init = (first ^ (1 << (8 - len))) as u64;
 
-    let mut val = u64::from(v ^ (1 << (8 - len)));
+    let res = data.iter().fold(init, |acc, &b| acc << 8 | b as u64);
 
-    trace!(
-        "vint {:08b} {:08b} {:08b} {}",
-        val,
-        v,
-        (1 << (8 - len)),
-        len
-    );
-
-    for i in 1..len {
-        val = (val << 8) | u64::from(input[i]);
-    }
-
-    trace!("     result {:08x}", val);
-
-    Ok((&input[len..], val))
+    Ok((i, res))
 }
 
 /// Creates a [prim@u32] from the bitstream representaton of an EBML Unsigned Integer Element.
