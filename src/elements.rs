@@ -39,7 +39,7 @@ pub(crate) fn sub_element<'a, O: EbmlParsable<'a>>(input: &'a [u8]) -> EbmlResul
 
     let (i, data) = checksum(crc, take(size))(i)?;
 
-    match O::try_parse(data) {
+    match O::parse(data) {
         Ok(o) => Ok((i, o)),
         Err(kind) => Err(nom::Err::Error(Error { id: 0, kind })),
     }

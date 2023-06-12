@@ -69,7 +69,7 @@ fn floats() {
     ];
 
     for (bytes, expected) in tests {
-        assert_eq!(expected, f64::try_parse(bytes).ok());
+        assert_eq!(expected, f64::parse(bytes).ok());
     }
 
     // EBML doesn't specify how to encode qNaN and sNaN. So we can't
@@ -81,7 +81,7 @@ fn floats() {
     ];
 
     for (bytes, neg) in nans {
-        let res = f64::try_parse(bytes).unwrap();
+        let res = f64::parse(bytes).unwrap();
         assert!(res.is_nan());
         assert_eq!(res.is_sign_negative(), neg);
     }

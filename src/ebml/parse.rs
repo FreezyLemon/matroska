@@ -1,9 +1,7 @@
-use std::ops::{BitOr, Shl};
-
 use crc::{Algorithm, Crc};
 use nom::{
     bytes::streaming::take,
-    combinator::{complete, map, map_res, opt},
+    combinator::{map, map_res, opt},
     number::streaming::u8,
     sequence::{preceded, tuple},
     Err::Incomplete,
@@ -15,45 +13,62 @@ use super::error::{ebml_err, Error, ErrorKind};
 
 pub type EbmlResult<'a, T> = nom::IResult<&'a [u8], T, Error>;
 
-pub trait EbmlParsable<'a>: Sized {
+pub trait EbmlParsable<'a, const ID: u32>: Sized {
     /// Whether to check for a CRC-32 Element and validate the checksum.
     fn has_crc() -> bool {
         false
     }
 
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind>;
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self>;
 }
 
-// Parsable implementation for the integer types
-trait Int: From<u8> + Shl<Self, Output = Self> + BitOr<Self, Output = Self> {}
-impl Int for u64 {}
-impl Int for u32 {}
-impl Int for i64 {}
-
-impl<'a, T: Int> EbmlParsable<'a> for T {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        if data.len() > std::mem::size_of::<T>() {
-            return Err(ErrorKind::IntTooWide);
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for i64 {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        let (i, sz) = preceded(check_id(ID), elem_size)(input)?;
+        
+        match sz {
+            0 => Ok((i, default.unwrap_or(0))),
+            l @ 0..=8 => map(take(l), int)(input),
+            _ => ebml_err(ID, ErrorKind::IntTooWide)
         }
+    }
+}
 
-        let mut val = Self::from(0);
-        for b in data {
-            val = (val << Self::from(8)) | Self::from(*b);
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for u64 {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        let (i, sz) = preceded(check_id(ID), elem_size)(input)?;
+
+        match sz {
+            0 => Ok((i, default.unwrap_or(0))),
+            l @ 0..=8 => map(take(l), uint)(input),
+            _ => ebml_err(ID, ErrorKind::UintTooWide)
         }
+    }
+}
 
-        Ok(val)
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for u32 {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        let (i, sz) = preceded(check_id(ID), elem_size)(input)?;
+
+        match sz {
+            0 => Ok((i, default.unwrap_or(0))),
+            l @ 0..=4 => map(take(l), uint_short)(input),
+            _ => ebml_err(ID, ErrorKind::UintTooWide)
+        }
     }
 }
 
 // FIXME: Define and double-check float parsing behaviour in error cases
 // FIXME: Also implement a test suite for that
-impl<'a> EbmlParsable<'a> for f64 {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        match data.len() {
-            0 => Err(ErrorKind::EmptyFloat),
-            4 => Ok(f64::from(f32::from_be_bytes(data.try_into().unwrap()))),
-            8 => Ok(f64::from_be_bytes(data.try_into().unwrap())),
-            _ => Err(ErrorKind::FloatWidthIncorrect),
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for f64 {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        let (i, sz) = preceded(check_id(ID), elem_size)(input)?;
+
+        match sz {
+            0 => Ok((i, default.unwrap_or(0.0))),
+            4 => map(map(take(4), f32::from_be_bytes), f64::from)(input),
+            8 => map(take(8), f64::from_be_bytes)(input),
+            _ => ebml_err(ID, ErrorKind::FloatWidthIncorrect),
         }
     }
 }
@@ -68,44 +83,45 @@ impl<'a> EbmlParsable<'a> for f64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Date(pub i64);
 
-impl<'a> EbmlParsable<'a> for Date {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        match data.len() {
-            0 | 8 => i64::try_parse(data).map(Date),
-            _ => Err(ErrorKind::DateWidthIncorrect),
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for Date {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        let (i, sz) = preceded(check_id(ID), elem_size)(input)?;
+
+        match sz {
+            0 => Ok((i, default.unwrap_or(Date(0)))),
+            8 => map(map(take(8), int), Date)(input),
+            _ => ebml_err(ID, ErrorKind::DateWidthIncorrect),
         }
     }
 }
 
-impl<'a> EbmlParsable<'a> for String {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        String::from_utf8(data.to_vec()).map_err(|_| ErrorKind::StringNotUtf8)
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for String {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        map_res(get_elem_data::<ID>, |data| String::from_utf8(data).map_err(|_| ErrorKind::StringNotUtf8))(input)
     }
 }
 
-impl<'a, const N: usize> EbmlParsable<'a> for [u8; N] {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        let actual_len = data.len();
-        data.try_into()
-            .map_err(|_| ErrorKind::BinaryWidthIncorrect(actual_len as u16))
+impl<'a, const ID: u32, const N: usize> EbmlParsable<'a, ID> for [u8; N] {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        map(get_elem_data::<ID>, |d| d.try_into().map_err(|_| ErrorKind::BinaryWidthIncorrect(d.len() as u16)))(input)
     }
 }
 
-impl<'a> EbmlParsable<'a> for Vec<u8> {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        Ok(data.to_vec())
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for Vec<u8> {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        get_elem_data::<ID>(input)
     }
 }
 
-impl<'a> EbmlParsable<'a> for &'a [u8] {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        Ok(data)
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for &'a [u8] {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        get_elem_data::<ID>(input)
     }
 }
 
-impl<'a> EbmlParsable<'a> for Uuid {
-    fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
-        <[u8; 16] as EbmlParsable>::try_parse(data).map(Uuid::from_bytes)
+impl<'a, const ID: u32> EbmlParsable<'a, ID> for Uuid {
+    fn parse(input: &'a [u8], default: Option<Self>) -> EbmlResult<Self> {
+        map(<[u8; 16] as EbmlParsable>::parse, Uuid::from_bytes)(input)
     }
 }
 
@@ -117,23 +133,27 @@ pub fn get_required<T>(val: Option<T>, id: u32) -> Result<T, ErrorKind> {
     })
 }
 
-pub fn ebml_element<'a, O: EbmlParsable<'a>>(id: u32) -> impl Fn(&'a [u8]) -> EbmlResult<'a, O> {
-    move |i| {
-        let (i, mut size) = complete(preceded(check_id(id), elem_size))(i)?;
-        let (i, crc) = if O::has_crc() { crc(i)? } else { (i, None) };
+// pub fn ebml_element<'a, O: EbmlParsable<'a>>(id: u32) -> impl Fn(&'a [u8]) -> EbmlResult<'a, O> {
+//     move |i| {
+//         let (i, mut size) = complete(preceded(check_id(id), elem_size))(i)?;
+//         let (i, crc) = if O::has_crc() { crc(i)? } else { (i, None) };
 
-        if crc.is_some() {
-            // The CRC-32 Element is 6 bytes long,
-            // and we already consumed them above.
-            size -= 6;
-        }
+//         if crc.is_some() {
+//             // The CRC-32 Element is 6 bytes long,
+//             // and we already consumed them above.
+//             size -= 6;
+//         }
 
-        let (i, data) = checksum(crc, complete(take(size)))(i)?;
-        match O::try_parse(data) {
-            Ok(o) => Ok((i, o)),
-            Err(kind) => ebml_err(id, kind),
-        }
-    }
+//         let (i, data) = checksum(crc, complete(take(size)))(i)?;
+//         match O::parse(data) {
+//             Ok(o) => Ok((i, o)),
+//             Err(kind) => ebml_err(id, kind),
+//         }
+//     }
+// }
+
+pub fn get_elem_data<'a, const ID: u32>(input: &'a [u8]) -> EbmlResult<&'a [u8]> {
+    map(preceded(check_id(ID), elem_size), take)(input)
 }
 
 pub fn check_id<'a>(id: u32) -> impl Fn(&'a [u8]) -> EbmlResult<'a, u32> {
@@ -149,7 +169,7 @@ pub fn check_id<'a>(id: u32) -> impl Fn(&'a [u8]) -> EbmlResult<'a, u32> {
 }
 
 pub fn void(input: &[u8]) -> EbmlResult<&[u8]> {
-    ebml_element(0xEC)(input)
+    <&[u8] as EbmlParsable<0xEC>>::parse(input, None)
 }
 
 /// Consumes an entire EBML Element, and returns the ID if successful.
@@ -166,7 +186,7 @@ const CRC: Crc<u32> = Crc::<u32>::new(&Algorithm {
 });
 
 pub fn crc(input: &[u8]) -> EbmlResult<Option<u32>> {
-    opt(map(ebml_element::<[u8; 4]>(0xBF), u32::from_le_bytes))(input)
+    opt(map(<[u8; 4] as EbmlParsable<0xBF>>::parse(input, None), u32::from_le_bytes))(input)
 }
 
 pub fn checksum<'a, F>(
