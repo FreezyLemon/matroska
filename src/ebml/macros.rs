@@ -66,16 +66,14 @@ macro_rules! impl_ebml_master {
         }
 
         impl$(<$lifetime>)? $crate::ebml::EbmlSerializable for $name$(<$lifetime>)? {
-            fn serialize<W: std::io::Write>(&self, w: cookie_factory::WriteContext<W>, id: core::num::NonZeroU32) -> cookie_factory::GenResult<W> {
-                let w = $crate::ebml::serialize::vid(id)(w)?;
+            fn serialize<const ID: u32, W: std::io::Write>(&self, w: cookie_factory::WriteContext<W>) -> cookie_factory::GenResult<W> {
+                let w = $crate::ebml::serialize::vid::<ID, W>(w)?;
 
+                // TODO: Parametrize starting capacity
                 let buf = cookie_factory::WriteContext::from(std::vec::Vec::with_capacity(64));
 
                 $(
-                    let buf = self.$field_name.serialize(
-                        buf,
-                        core::num::NonZeroU32::new($field_id).unwrap(),
-                    )?;
+                    let buf = self.$field_name.serialize::<$field_id, _>(buf)?;
                 )+
 
                 let w = $crate::ebml::serialize::vint(buf.position as u64)(w)?;

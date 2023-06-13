@@ -1,5 +1,5 @@
+use std::io::Write;
 use std::sync::Arc;
-use std::{io::Write, num::NonZeroU32};
 
 use cookie_factory::SerializeFn;
 
@@ -72,10 +72,7 @@ impl MkvMuxer {
     }
 
     pub fn write_ebml_header(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let written = try_write(buf, |w| {
-            self.header
-                .serialize(w, NonZeroU32::new(0x1A45DFA3).unwrap())
-        })?;
+        let written = try_write(buf, |w| self.header.serialize::<0x1A45DFA3, _>(w))?;
         buf.truncate(written as usize);
 
         Ok(())
@@ -89,10 +86,7 @@ impl MkvMuxer {
     }
 
     pub fn write_seek_head(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let written = try_write(buf, |w| {
-            self.seek_head
-                .serialize(w, NonZeroU32::new(0x114D9B74).unwrap())
-        })?;
+        let written = try_write(buf, |w| self.seek_head.serialize::<0x114D9B74, _>(w))?;
         buf.truncate(written as usize);
 
         Ok(())
@@ -100,9 +94,7 @@ impl MkvMuxer {
 
     pub fn write_info(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         if let Some(ref info) = self.info {
-            let written = try_write(buf, |w| {
-                info.serialize(w, NonZeroU32::new(0x1549A966).unwrap())
-            })?;
+            let written = try_write(buf, |w| info.serialize::<0x1549A966, _>(w))?;
             buf.truncate(written as usize);
         }
         Ok(())
@@ -110,9 +102,7 @@ impl MkvMuxer {
 
     pub fn write_tracks(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         if let Some(ref tracks) = self.tracks {
-            let written = try_write(buf, |w| {
-                tracks.serialize(w, NonZeroU32::new(0x1654AE6B).unwrap())
-            })?;
+            let written = try_write(buf, |w| tracks.serialize::<0x1654AE6B, _>(w))?;
             buf.truncate(written as usize);
         }
         Ok(())
@@ -216,9 +206,7 @@ impl Muxer for MkvMuxer {
                 };
 
                 let mut buf = vec![0u8; 16];
-                let written = try_write(&mut buf, |w| {
-                    cluster.serialize(w, NonZeroU32::new(0x1F43B675).unwrap())
-                })?;
+                let written = try_write(&mut buf, |w| cluster.serialize::<0x1F43B675, _>(w))?;
                 buf.truncate(written as usize);
                 out.write_all(&buf).unwrap();
             }
@@ -245,9 +233,7 @@ impl Muxer for MkvMuxer {
             };
 
             let mut buf = vec![0u8; 16];
-            let written = try_write(&mut buf, |w| {
-                cluster.serialize(w, NonZeroU32::new(0x1F43B675).unwrap())
-            })?;
+            let written = try_write(&mut buf, |w| cluster.serialize::<0x1F43B675, _>(w))?;
             buf.truncate(written as usize);
 
             out.write_all(&buf).unwrap();
