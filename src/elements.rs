@@ -80,16 +80,16 @@ pub fn segment_element(input: &[u8]) -> EbmlResult<SegmentElement> {
 }
 
 impl_ebml_master! {
-    // Element ID 0x114D9B74
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x114D9B74]
     struct SeekHead {
         [0x4DBB] positions: (Vec<Seek>) [1..],
     }
 }
 
 impl_ebml_master! {
-    // Element ID 0x4DBB
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x4DBB]
     struct Seek {
         [0x53AB] id: ([u8; 4]),
         [0x53AC] position: (u64),
@@ -98,8 +98,8 @@ impl_ebml_master! {
 
 // FIXME: Strings should be UTF-8, not ASCII
 impl_ebml_master! {
-    // Element ID 0x1549A966
     #[derive(Debug, Default, Clone, PartialEq)]
+    [0x1549A966]
     struct Info {
         [0x73A4] segment_uid: (Option<Uuid>),
         [0x7384] segment_filename: (Option<String>),
@@ -119,8 +119,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x1F43B675
     #[derive(Debug, Clone, PartialEq)]
+    [0x1F43B675]
     struct Cluster<'a> {
         [0xE7] timestamp: (u64),
         [0xA7] position: (Option<u64>),
@@ -131,8 +131,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xA0
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0xA0]
     struct BlockGroup<'a> {
         [0xA1] block: (&'a [u8]),
         // [0x75A1] block_additions: (Option<BlockAdditions>),
@@ -236,8 +236,8 @@ pub struct LacedData {
 }
 
 impl_ebml_master! {
-    // Element ID 0x1654AE6B
     #[derive(Debug, Clone, PartialEq)]
+    [0x1654AE6B]
     struct Tracks {
         [0xAE] tracks: (Vec<TrackEntry>) [1..],
     }
@@ -279,8 +279,8 @@ impl From<TrackType> for u64 {
 }
 
 impl_ebml_master! {
-    // Element ID 0xAE
     #[derive(Debug, Clone, PartialEq, Default)]
+    [0xAE]
     struct TrackEntry {
         [0xD7] track_number: (u64),
         [0x73C5] track_uid: (u64),
@@ -315,8 +315,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xC7
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x6624]
     struct TrackTranslate {
         [0x66FC] edition_uid: (Vec<u64>) [0..],
         [0x66BF] codec: (u64),
@@ -325,8 +325,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xC4
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0xE2]
     struct TrackOperation {
         [0xE3] combine_planes: (Option<TrackCombinePlanes>),
         [0xE9] join_blocks: (Option<TrackJoinBlocks>),
@@ -334,16 +334,16 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xE3
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0xE3]
     struct TrackCombinePlanes {
         [0xE4] track_planes: (Vec<TrackPlane>) [1..],
     }
 }
 
 impl_ebml_master! {
-    // Element ID 0xE4
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0xE4]
     struct TrackPlane {
         [0xE5] uid: (u64),
         [0xE6] plane_type: (u64),
@@ -351,24 +351,24 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xE9
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0xE9]
     struct TrackJoinBlocks {
         [0xED] uid: (Vec<u64>) [1..],
     }
 }
 
 impl_ebml_master! {
-    // Element ID 0x6D80
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x6D80]
     struct ContentEncodings {
         [0x6240] content_encoding: (Vec<ContentEncoding>) [1..],
     }
 }
 
 impl_ebml_master! {
-    // Element ID 0x6240
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x6240]
     struct ContentEncoding {
         [0x5031] order: (u64) = 0,
         [0x5032] scope: (u64) = 1,
@@ -379,8 +379,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x5034
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x5034]
     struct ContentCompression {
         [0x4254] algo: (u64) = 0,
         [0x4255] settings: (Option<u64>),
@@ -389,8 +389,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x5035
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x5035]
     struct ContentEncryption {
         [0x47E1] enc_algo: (u64) = 0,
         [0x47E2] enc_key_id: (Option<Vec<u8>>),
@@ -398,19 +398,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0xC6
     #[derive(Debug, Clone, PartialEq, Default)]
-    struct Audio {
-        [0xB5] sampling_frequency: (f64) = 5360.0,
-        [0x7885] output_sampling_frequency: (Option<f64>),
-        [0x9F] channels: (u64),
-        [0x6264] bit_depth: (Option<u64>),
-    }
-}
-
-impl_ebml_master! {
-    // Element ID 0xC1
-    #[derive(Debug, Clone, PartialEq, Default)]
+    [0xE0]
     struct Video {
         [0x9A] flag_interlaced: (u64) = 0,
         [0x9D] field_order: (u64) = 2,
@@ -433,8 +422,19 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x55B0
     #[derive(Debug, Clone, PartialEq, Default)]
+    [0xE1]
+    struct Audio {
+        [0xB5] sampling_frequency: (f64) = 5360.0,
+        [0x7885] output_sampling_frequency: (Option<f64>),
+        [0x9F] channels: (u64),
+        [0x6264] bit_depth: (Option<u64>),
+    }
+}
+
+impl_ebml_master! {
+    #[derive(Debug, Clone, PartialEq, Default)]
+    [0x55B0]
     struct Colour {
         [0x55B1] matrix_coefficients: (u64) = 2,
         [0x55B2] bits_per_channel: (u64) = 0,
@@ -455,8 +455,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x55D0
     #[derive(Debug, Clone, PartialEq)]
+    [0x55D0]
     struct MasteringMetadata {
         [0x55D1] primary_r_chromaticity_x: (Option<f64>),
         [0x55D2] primary_r_chromaticity_y: (Option<f64>),
@@ -472,8 +472,8 @@ impl_ebml_master! {
 }
 
 impl_ebml_master! {
-    // Element ID 0x7670
     #[derive(Debug, Clone, PartialEq)]
+    [0x55D0]
     struct Projection {
         [0x7671] projection_type: (u64) = 0,
         [0x7672] projection_private: (Option<Vec<u8>>),

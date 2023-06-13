@@ -11,8 +11,8 @@ pub use self::parse::{Date, EbmlParsable, EbmlResult};
 pub use self::serialize::EbmlSerializable;
 
 self::macros::impl_ebml_master! {
-    // Element ID 0x1A45DFA3
     #[derive(Debug, Clone, PartialEq, Eq)]
+    [0x1A45DFA3]
     struct EbmlHeader {
         [0x4286] version: (u32) = 1,
         [0x42F7] read_version: (u32) = 1,

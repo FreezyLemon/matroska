@@ -12,22 +12,14 @@ use crate::elements::{Lacing, SimpleBlock};
 /// a valid representation of certain [EBML Element Types].
 ///
 /// [EBML Element Types]: https://www.rfc-editor.org/rfc/rfc8794.html#name-ebml-element-types
-pub trait EbmlSerializable: Sized {
+pub trait EbmlSerializable<const ID: u32>: Sized {
     /// Serializes the Rust value as zero or more EBML Elements made
     /// up of an Element ID, the Element Data Size and the Element Data.
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W>;
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W>;
 }
 
-impl EbmlSerializable for u64 {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for u64 {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0);
 
         let sz = match *self {
@@ -47,24 +39,16 @@ impl EbmlSerializable for u64 {
     }
 }
 
-impl EbmlSerializable for u32 {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for u32 {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         // TODO: Investigate whether this could benefit from a manual implementation
         // (copy-paste code for u64 and change 8 -> 4)
-        u64::from(*self).serialize::<ID, W>(w, default.map(u64::from))
+        <u64 as EbmlSerializable<ID>>::serialize(&u64::from(*self), w, default.map(u64::from))
     }
 }
 
-impl EbmlSerializable for i64 {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for i64 {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0);
 
         let sz = match *self {
@@ -75,7 +59,13 @@ impl EbmlSerializable for i64 {
             0 => 1,
 
             // handle positive numbers like u64s
-            s @ 1.. => return (s as u64).serialize::<ID, W>(w, Some(*self as u64 - 1)),
+            s @ 1.. => {
+                return <u64 as EbmlSerializable<ID>>::serialize(
+                    &(s as u64),
+                    w,
+                    Some(*self as u64 - 1),
+                )
+            }
 
             // two's complement -> leading_ones instead of leading_zeros
             s => 8 - ((s.leading_ones() - 1) / 8) as usize,
@@ -89,12 +79,8 @@ impl EbmlSerializable for i64 {
 
 // FIXME: How do we even do this for 4-octet floats?
 // I think we need a newtype...
-impl EbmlSerializable for f64 {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for f64 {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0.0);
 
         let w = vid::<ID, W>(w)?;
@@ -107,97 +93,69 @@ impl EbmlSerializable for f64 {
     }
 }
 
-impl EbmlSerializable for crate::ebml::Date {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for crate::ebml::Date {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         // The default for Date Elements defaults to Date(0_i64).
         // The default for Integer Elements is also 0, so this is fine.
-        self.0.serialize::<ID, W>(w, default.map(|d| d.0))
+        <i64 as EbmlSerializable<ID>>::serialize(&self.0, w, default.map(|d| d.0))
     }
 }
 
-impl EbmlSerializable for String {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for String {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = &default.unwrap_or_default();
         if self == default {
-            [].serialize::<ID, W>(w, None)
+            <&[u8] as EbmlSerializable<ID>>::serialize(&[].as_slice(), w, None)
         } else {
-            self.as_bytes().serialize::<ID, W>(w, None)
+            <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_bytes(), w, None)
         }
     }
 }
 
-impl<const N: usize> EbmlSerializable for [u8; N] {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32, const N: usize> EbmlSerializable<ID> for [u8; N] {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
 
-        self.as_slice().serialize::<ID, W>(w, None)
+        <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_slice(), w, None)
     }
 }
 
-impl<T: EbmlSerializable> EbmlSerializable for Vec<T> {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        mut w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32, T: EbmlSerializable<ID>> EbmlSerializable<ID> for Vec<T> {
+    fn serialize<W: Write>(&self, mut w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(
             default.is_none(),
-            "Default values are not supported for Vec<T>"
+            "Default values are not supported for Vec<T>."
         );
 
         for t in self {
-            w = t.serialize::<ID, W>(w, None)?;
+            w = <T as EbmlSerializable<ID>>::serialize(t, w, None)?;
         }
 
         Ok(w)
     }
 }
 
-impl<T: EbmlSerializable> EbmlSerializable for Option<T> {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32, T: EbmlSerializable<ID>> EbmlSerializable<ID> for Option<T> {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(default.is_none(), "Default values are not supported for Option<T>. Optional Elements with a default value should be represented by T, not Option<T>");
 
         match self {
-            Some(t) => t.serialize::<ID, W>(w, None),
+            Some(t) => <T as EbmlSerializable<ID>>::serialize(t, w, None),
             None => Ok(w),
         }
     }
 }
 
-impl EbmlSerializable for Vec<u8> {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for Vec<u8> {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
 
-        self.as_slice().serialize::<ID, W>(w, None)
+        <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_slice(), w, None)
     }
 }
 
-impl<'a> EbmlSerializable for &'a [u8] {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<'a, const ID: u32> EbmlSerializable<ID> for &'a [u8] {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
 
         let w = vid::<ID, W>(w)?;
@@ -206,18 +164,14 @@ impl<'a> EbmlSerializable for &'a [u8] {
     }
 }
 
-impl EbmlSerializable for uuid::Uuid {
-    fn serialize<const ID: u32, W: Write>(
-        &self,
-        w: WriteContext<W>,
-        default: Option<Self>,
-    ) -> GenResult<W> {
+impl<const ID: u32> EbmlSerializable<ID> for uuid::Uuid {
+    fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         assert!(
             default.is_none(),
             "Default values are not supported for UIDs and UUIDs, as that wouldn't make sense."
         );
 
-        self.as_bytes().serialize::<ID, W>(w, None)
+        <[u8; 16] as EbmlSerializable<ID>>::serialize(self.as_bytes(), w, None)
     }
 }
 
@@ -385,8 +339,8 @@ mod tests {
     fn check_uint<const ID: u32>(val: u64, expected_len: u64, expected: [u8; 13]) {
         let mut buf = [0u8; 13];
         let w = buf.as_mut_slice().into();
-        let w = val
-            .serialize::<ID, _>(w, None)
+
+        let w = <u64 as EbmlSerializable<ID>>::serialize(&val, w, None)
             .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
 
         assert_eq!(w.position, expected_len, "id: {ID:#0X}");
@@ -431,8 +385,7 @@ mod tests {
     fn check_int<const ID: u32>(val: i64, expected_len: u64, expected: [u8; 13]) {
         let mut buf = [0u8; 13];
         let w = buf.as_mut_slice().into();
-        let w = val
-            .serialize::<ID, _>(w, None)
+        let w = <i64 as EbmlSerializable<ID>>::serialize(&val, w, None)
             .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
 
         assert_eq!(w.position, expected_len, "id: {ID:#0X}");
