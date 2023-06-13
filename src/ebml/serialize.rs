@@ -12,20 +12,35 @@ use crate::elements::{Lacing, SimpleBlock};
 /// a valid representation of certain [EBML Element Types].
 ///
 /// [EBML Element Types]: https://www.rfc-editor.org/rfc/rfc8794.html#name-ebml-element-types
-pub trait EbmlSerializable {
+pub trait EbmlSerializable: Sized {
     /// Serializes the Rust value as zero or more EBML Elements made
     /// up of an Element ID, the Element Data Size and the Element Data.
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W>;
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W>;
 }
 
 impl EbmlSerializable for u64 {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        let mut sz = 8 - (self.leading_zeros() / 8) as usize;
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        let default = default.unwrap_or(0);
 
-        // FIXME: Allow zero-sized uints
-        if sz == 0 {
-            sz = 1;
-        }
+        let sz = match *self {
+            // don't serialize if val == default
+            s if s == default => 0,
+
+            // we need to serialize zeros if the default is != 0
+            0 => 1,
+
+            // calculate minimum required size
+            s => 8 - (s.leading_zeros() / 8) as usize,
+        };
+
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
@@ -33,19 +48,39 @@ impl EbmlSerializable for u64 {
 }
 
 impl EbmlSerializable for u32 {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        (*self as u64).serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        // TODO: Investigate whether this could benefit from a manual implementation
+        // (copy-paste code for u64 and change 8 -> 4)
+        u64::from(*self).serialize::<ID, W>(w, default.map(u64::from))
     }
 }
 
 impl EbmlSerializable for i64 {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        if *self >= 0 {
-            return (*self as u64).serialize::<ID, W>(w);
-        }
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        let default = default.unwrap_or(0);
 
-        // leading_ones() - 1 because of the sign bit
-        let sz = 8 - ((self.leading_ones() - 1) / 8) as usize;
+        let sz = match *self {
+            // don't serialize if val == default
+            s if s == default => 0,
+
+            // we need to serialize zeros if the default is != 0
+            0 => 1,
+
+            // handle positive numbers like u64s
+            s @ 1.. => return (s as u64).serialize::<ID, W>(w, Some(*self as u64 - 1)),
+
+            // two's complement -> leading_ones instead of leading_zeros
+            s => 8 - ((s.leading_ones() - 1) / 8) as usize,
+        };
+
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
@@ -55,35 +90,75 @@ impl EbmlSerializable for i64 {
 // FIXME: How do we even do this for 4-octet floats?
 // I think we need a newtype...
 impl EbmlSerializable for f64 {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        let default = default.unwrap_or(0.0);
+
         let w = vid::<ID, W>(w)?;
-        let w = vint(8)(w)?;
-        be_f64(*self)(w)
+        if *self == default {
+            vint(0)(w)
+        } else {
+            let w = vint(8)(w)?;
+            be_f64(*self)(w)
+        }
     }
 }
 
 impl EbmlSerializable for crate::ebml::Date {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        self.0.serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        // The default for Date Elements defaults to Date(0_i64).
+        // The default for Integer Elements is also 0, so this is fine.
+        self.0.serialize::<ID, W>(w, default.map(|d| d.0))
     }
 }
 
 impl EbmlSerializable for String {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        self.as_bytes().serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        let default = &default.unwrap_or_default();
+        if self == default {
+            [].serialize::<ID, W>(w, None)
+        } else {
+            self.as_bytes().serialize::<ID, W>(w, None)
+        }
     }
 }
 
 impl<const N: usize> EbmlSerializable for [u8; N] {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        self.as_slice().serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
+
+        self.as_slice().serialize::<ID, W>(w, None)
     }
 }
 
 impl<T: EbmlSerializable> EbmlSerializable for Vec<T> {
-    fn serialize<const ID: u32, W: Write>(&self, mut w: WriteContext<W>) -> GenResult<W> {
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        mut w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(
+            default.is_none(),
+            "Default values are not supported for Vec<T>"
+        );
+
         for t in self {
-            w = t.serialize::<ID, W>(w)?;
+            w = t.serialize::<ID, W>(w, None)?;
         }
 
         Ok(w)
@@ -91,22 +166,40 @@ impl<T: EbmlSerializable> EbmlSerializable for Vec<T> {
 }
 
 impl<T: EbmlSerializable> EbmlSerializable for Option<T> {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(default.is_none(), "Default values are not supported for Option<T>. Optional Elements with a default value should be represented by T, not Option<T>");
+
         match self {
-            Some(t) => t.serialize::<ID, W>(w),
+            Some(t) => t.serialize::<ID, W>(w, None),
             None => Ok(w),
         }
     }
 }
 
 impl EbmlSerializable for Vec<u8> {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        self.as_slice().serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
+
+        self.as_slice().serialize::<ID, W>(w, None)
     }
 }
 
 impl<'a> EbmlSerializable for &'a [u8] {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
+
         let w = vid::<ID, W>(w)?;
         let w = vint(self.len() as u64)(w)?;
         slice(self)(w)
@@ -114,8 +207,17 @@ impl<'a> EbmlSerializable for &'a [u8] {
 }
 
 impl EbmlSerializable for uuid::Uuid {
-    fn serialize<const ID: u32, W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        self.as_bytes().serialize::<ID, W>(w)
+    fn serialize<const ID: u32, W: Write>(
+        &self,
+        w: WriteContext<W>,
+        default: Option<Self>,
+    ) -> GenResult<W> {
+        assert!(
+            default.is_none(),
+            "Default values are not supported for UIDs and UUIDs, as that wouldn't make sense."
+        );
+
+        self.as_bytes().serialize::<ID, W>(w, None)
     }
 }
 
@@ -244,10 +346,12 @@ mod tests {
         }
     }
 
+    // TODO: Expand int/uint tests to include correct handling of default values
+
     #[test]
     fn uint_correct() {
         // To explain the expected outputs, let's use the third test as an example:
-        // (val: 0xFF, id: 0x84) should result in: [0x84, 0x81, 0xFF, 0x00, /* more zeros */],
+        // (val: 0xFF, expected_len: 3, id: 0x84) should result in: [0x84, 0x81, 0xFF, 0x00, /* more zeros */],
         //
         // The first byte 0x84 is the Element ID literally.
         // The second byte 0x81 is a 1-byte long VINT representing the Element Size:
@@ -263,30 +367,29 @@ mod tests {
 
         // max length = 4 (ID) + 1 (Size) + 8 (Data) = 13
         #[rustfmt::skip]
-        let tests: [(u64, [u8; 13]); 5] = [
-            (0, [0x81, 0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (1, [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (0xFF, [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            ((4321 << 42) + 8765, [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
-            (u64::MAX, [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+        let tests: [(u64, u64, [u8; 13]); 5] = [
+            (0, 2, [0x81, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (1, 3, [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (0xFF, 3, [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((4321 << 42) + 8765, 12, [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
+            (u64::MAX, 13, [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
         ];
 
-        check_uint::<0x81>(tests[0].0, tests[0].1);
-        check_uint::<0x90>(tests[1].0, tests[1].1);
-        check_uint::<0x84>(tests[2].0, tests[2].1);
-        check_uint::<0x12AB_34CD>(tests[3].0, tests[3].1);
-        check_uint::<0xABCD_EFFE>(tests[4].0, tests[4].1);
+        check_uint::<0x81>(tests[0].0, tests[0].1, tests[0].2);
+        check_uint::<0x90>(tests[1].0, tests[1].1, tests[1].2);
+        check_uint::<0x84>(tests[2].0, tests[2].1, tests[2].2);
+        check_uint::<0x12AB_34CD>(tests[3].0, tests[3].1, tests[3].2);
+        check_uint::<0xABCD_EFFE>(tests[4].0, tests[4].1, tests[4].2);
     }
 
-    fn check_uint<const ID: u32>(val: u64, expected: [u8; 13]) {
+    fn check_uint<const ID: u32>(val: u64, expected_len: u64, expected: [u8; 13]) {
         let mut buf = [0u8; 13];
         let w = buf.as_mut_slice().into();
+        let w = val
+            .serialize::<ID, _>(w, None)
+            .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
 
-        assert!(
-            val.serialize::<ID, _>(w).is_ok(),
-            "serialization failed for id: {ID:#0X}"
-        );
-
+        assert_eq!(w.position, expected_len, "id: {ID:#0X}");
         assert_eq!(buf, expected, "id: {ID:#0X}");
     }
 
@@ -294,46 +397,45 @@ mod tests {
     fn int_correct() {
         // see uint_correct for an explanation of what's happening here
         #[rustfmt::skip]
-        let tests: [(i64, [u8; 13]); 11] = [
+        let tests: [(i64, u64, [u8; 13]); 11] = [
             // x >= 0 -> equal to uint:
-            (0, [0x81, 0x81, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (1, [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (0xFF, [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            ((4321 << 42) + 8765, [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
-            (i64::MAX, [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+            (0, 2, [0x81, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (1, 3, [0x90, 0x81, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (0xFF, 3, [0x84, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((4321 << 42) + 8765, 12, [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
+            (i64::MAX, 13, [0xAB, 0xCD, 0xEF, 0xFE, 0x88, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
 
             // x < 0 -> more tests
-            (i64::MIN, [0x82, 0x88, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (-1, [0x83, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (-128, [0x84, 0x81, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (-129, [0x85, 0x82, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            (-87654321, [0x86, 0x84, 0xFA, 0xC6, 0x80, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-            ((-4321 << 42) - 8765, [0x87, 0x87, 0xBC, 0x7B, 0xFF, 0xFF, 0xFF, 0xDD, 0xC3, 0x00, 0x00, 0x00, 0x00]),
+            (i64::MIN, 10, [0x82, 0x88, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (-1, 3, [0x83, 0x81, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (-128, 3, [0x84, 0x81, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (-129, 4, [0x85, 0x82, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (-87654321, 6, [0x86, 0x84, 0xFA, 0xC6, 0x80, 0x4F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            ((-4321 << 42) - 8765, 9, [0x87, 0x87, 0xBC, 0x7B, 0xFF, 0xFF, 0xFF, 0xDD, 0xC3, 0x00, 0x00, 0x00, 0x00]),
         ];
 
-        check_int::<0x81>(tests[0].0, tests[0].1);
-        check_int::<0x90>(tests[1].0, tests[1].1);
-        check_int::<0x84>(tests[2].0, tests[2].1);
-        check_int::<0x12AB_34CD>(tests[3].0, tests[3].1);
-        check_int::<0xABCD_EFFE>(tests[4].0, tests[4].1);
+        check_int::<0x81>(tests[0].0, tests[0].1, tests[0].2);
+        check_int::<0x90>(tests[1].0, tests[1].1, tests[1].2);
+        check_int::<0x84>(tests[2].0, tests[2].1, tests[2].2);
+        check_int::<0x12AB_34CD>(tests[3].0, tests[3].1, tests[3].2);
+        check_int::<0xABCD_EFFE>(tests[4].0, tests[4].1, tests[4].2);
 
-        check_int::<0x82>(tests[5].0, tests[5].1);
-        check_int::<0x83>(tests[6].0, tests[6].1);
-        check_int::<0x84>(tests[7].0, tests[7].1);
-        check_int::<0x85>(tests[8].0, tests[8].1);
-        check_int::<0x86>(tests[9].0, tests[9].1);
-        check_int::<0x87>(tests[10].0, tests[10].1);
+        check_int::<0x82>(tests[5].0, tests[5].1, tests[5].2);
+        check_int::<0x83>(tests[6].0, tests[6].1, tests[6].2);
+        check_int::<0x84>(tests[7].0, tests[7].1, tests[7].2);
+        check_int::<0x85>(tests[8].0, tests[8].1, tests[8].2);
+        check_int::<0x86>(tests[9].0, tests[9].1, tests[9].2);
+        check_int::<0x87>(tests[10].0, tests[10].1, tests[10].2);
     }
 
-    fn check_int<const ID: u32>(val: i64, expected: [u8; 13]) {
+    fn check_int<const ID: u32>(val: i64, expected_len: u64, expected: [u8; 13]) {
         let mut buf = [0u8; 13];
         let w = buf.as_mut_slice().into();
+        let w = val
+            .serialize::<ID, _>(w, None)
+            .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
 
-        assert!(
-            val.serialize::<ID, _>(w).is_ok(),
-            "serialization failed for id: {ID:#0X}"
-        );
-
+        assert_eq!(w.position, expected_len, "id: {ID:#0X}");
         assert_eq!(buf, expected, "id: {ID:#0X}");
     }
 }

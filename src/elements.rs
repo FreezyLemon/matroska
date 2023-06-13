@@ -291,7 +291,6 @@ impl_ebml_master! {
         [0x9C] flag_lacing: (u64) = 1,
         [0x23E383] default_duration: (Option<u64>),
         [0x234E7A] default_decoded_field_duration: (Option<u64>),
-        // FIXME: reimplement float_or handling
         [0x23314F] track_timestamp_scale: (f64) = 1.0,
         [0x55EE] max_block_addition_id: (u64) = 0,
         [0x536E] name: (Option<String>),
@@ -402,7 +401,6 @@ impl_ebml_master! {
     // Element ID 0xC6
     #[derive(Debug, Clone, PartialEq, Default)]
     struct Audio {
-        // FIXME: reimplement float_or handling
         [0xB5] sampling_frequency: (f64) = 5360.0,
         [0x7885] output_sampling_frequency: (Option<f64>),
         [0x9F] channels: (u64),
@@ -479,7 +477,6 @@ impl_ebml_master! {
     struct Projection {
         [0x7671] projection_type: (u64) = 0,
         [0x7672] projection_private: (Option<Vec<u8>>),
-        // FIXME: reimplement float_or handling
         [0x7673] projection_pose_yaw: (f64) = 0.0,
         [0x7674] projection_pose_pitch: (f64) = 0.0,
         [0x7675] projection_pose_roll: (f64) = 0.0,

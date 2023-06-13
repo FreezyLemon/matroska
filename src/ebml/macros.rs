@@ -23,6 +23,15 @@ macro_rules! unwrap_parser {
     };
 }
 
+macro_rules! wrap_default {
+    ($default:expr) => {
+        Some($default)
+    };
+    () => {
+        None
+    };
+}
+
 macro_rules! impl_ebml_master {
     (
         $(#[$outer:meta])*
@@ -66,14 +75,23 @@ macro_rules! impl_ebml_master {
         }
 
         impl$(<$lifetime>)? $crate::ebml::EbmlSerializable for $name$(<$lifetime>)? {
-            fn serialize<const ID: u32, W: std::io::Write>(&self, w: cookie_factory::WriteContext<W>) -> cookie_factory::GenResult<W> {
+            fn serialize<const ID: u32, W: std::io::Write>(
+                &self,
+                w: cookie_factory::WriteContext<W>,
+                default: std::option::Option<Self>
+            ) -> cookie_factory::GenResult<W> {
+                assert!(default.is_none(), "Default values are not supported for EBML Master Elements");
+
                 let w = $crate::ebml::serialize::vid::<ID, W>(w)?;
 
                 // TODO: Parametrize starting capacity
                 let buf = cookie_factory::WriteContext::from(std::vec::Vec::with_capacity(64));
 
                 $(
-                    let buf = self.$field_name.serialize::<$field_id, _>(buf)?;
+                    let buf = self.$field_name.serialize::<$field_id, _>(
+                        buf,
+                        $crate::ebml::macros::wrap_default!($($default)?)
+                    )?;
                 )+
 
                 let w = $crate::ebml::serialize::vint(buf.position as u64)(w)?;
@@ -86,3 +104,4 @@ macro_rules! impl_ebml_master {
 pub(crate) use impl_ebml_master;
 pub(crate) use unwrap_parser;
 pub(crate) use unwrap_value;
+pub(crate) use wrap_default;
