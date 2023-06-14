@@ -72,7 +72,7 @@ impl MkvMuxer {
     }
 
     pub fn write_ebml_header(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let written = try_write(buf, |w| self.header.serialize(w, None))?;
+        let written = try_write(buf, |w| self.header.serialize(w))?;
         buf.truncate(written as usize);
 
         Ok(())
@@ -86,7 +86,7 @@ impl MkvMuxer {
     }
 
     pub fn write_seek_head(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let written = try_write(buf, |w| self.seek_head.serialize(w, None))?;
+        let written = try_write(buf, |w| self.seek_head.serialize(w))?;
         buf.truncate(written as usize);
 
         Ok(())
@@ -94,7 +94,7 @@ impl MkvMuxer {
 
     pub fn write_info(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         if let Some(ref info) = self.info {
-            let written = try_write(buf, |w| info.serialize(w, None))?;
+            let written = try_write(buf, |w| info.serialize(w))?;
             buf.truncate(written as usize);
         }
         Ok(())
@@ -102,7 +102,7 @@ impl MkvMuxer {
 
     pub fn write_tracks(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         if let Some(ref tracks) = self.tracks {
-            let written = try_write(buf, |w| tracks.serialize(w, None))?;
+            let written = try_write(buf, |w| tracks.serialize(w))?;
             buf.truncate(written as usize);
         }
         Ok(())
@@ -206,7 +206,7 @@ impl Muxer for MkvMuxer {
                 };
 
                 let mut buf = vec![0u8; 16];
-                let written = try_write(&mut buf, |w| cluster.serialize(w, None))?;
+                let written = try_write(&mut buf, |w| cluster.serialize(w))?;
                 buf.truncate(written as usize);
                 out.write_all(&buf).unwrap();
             }
@@ -233,7 +233,7 @@ impl Muxer for MkvMuxer {
             };
 
             let mut buf = vec![0u8; 16];
-            let written = try_write(&mut buf, |w| cluster.serialize(w, None))?;
+            let written = try_write(&mut buf, |w| cluster.serialize(w))?;
             buf.truncate(written as usize);
 
             out.write_all(&buf).unwrap();
