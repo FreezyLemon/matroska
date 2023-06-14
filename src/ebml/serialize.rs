@@ -34,14 +34,7 @@ pub trait EbmlSerializable<const ID: u32, T>: Sized {
 
 impl<const ID: u32, T: EbmlDefault<ID, u64>> EbmlSerializable<ID, T> for u64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        let default = T::default();
-
-        let sz = if *self == default {
-            0
-        } else {
-            <u64 as EbmlSerializable<ID, T>>::data_size(self)
-        };
-
+        let sz = <u64 as EbmlSerializable<ID, T>>::data_size(self);
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
@@ -49,7 +42,8 @@ impl<const ID: u32, T: EbmlDefault<ID, u64>> EbmlSerializable<ID, T> for u64 {
 
     fn data_size(&self) -> usize {
         match self {
-            0 => 1, // at least one byte to serialize
+            s if *s == T::default() => 0,
+            0 => 1, // at least one byte to serialize a zero
             s => size_of::<Self>() - (s.leading_zeros() / 8) as usize,
         }
     }
@@ -57,20 +51,16 @@ impl<const ID: u32, T: EbmlDefault<ID, u64>> EbmlSerializable<ID, T> for u64 {
 
 impl<const ID: u32, T: EbmlDefault<ID, u32>> EbmlSerializable<ID, T> for u32 {
     fn serialize<W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        let sz = if *self == T::default() {
-            0
-        } else {
-            <u32 as EbmlSerializable<ID, T>>::data_size(self)
-        };
-
+        let sz = <u32 as EbmlSerializable<ID, T>>::data_size(self);
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
-        slice(&self.to_be_bytes()[8 - sz..])(w)
+        slice(&self.to_be_bytes()[4 - sz..])(w)
     }
 
     fn data_size(&self) -> usize {
         match self {
-            0 => 1, // at least one byte to serialize
+            s if *s == T::default() => 0,
+            0 => 1, // at least one byte to serialize a zero
             s => size_of::<Self>() - (s.leading_zeros() / 8) as usize,
         }
     }
@@ -78,12 +68,7 @@ impl<const ID: u32, T: EbmlDefault<ID, u32>> EbmlSerializable<ID, T> for u32 {
 
 impl<const ID: u32, T: EbmlDefault<ID, i64>> EbmlSerializable<ID, T> for i64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>) -> GenResult<W> {
-        let sz = if *self == T::default() {
-            0
-        } else {
-            <i64 as EbmlSerializable<ID, T>>::data_size(self)
-        };
-
+        let sz = <i64 as EbmlSerializable<ID, T>>::data_size(self);
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
@@ -91,6 +76,7 @@ impl<const ID: u32, T: EbmlDefault<ID, i64>> EbmlSerializable<ID, T> for i64 {
 
     fn data_size(&self) -> usize {
         match self {
+            i if *i == T::default() => 0,
             i @ 1.. => size_of::<Self>() - (i.leading_zeros() / 8) as usize,
             0 => 1,
             i => size_of::<Self>() - ((i.leading_ones() - 1) / 8) as usize,
@@ -110,8 +96,12 @@ impl<const ID: u32, T: EbmlDefault<ID, f64>> EbmlSerializable<ID, T> for f64 {
     }
 
     fn data_size(&self) -> usize {
-        // FIXME: Handle 4-byte floats. Probably needs a newtype
-        8
+        if *self == T::default() {
+            0
+        } else {
+            // TODO: Handle 4-byte floats. Probably needs a newtype
+            8
+        }
     }
 }
 
@@ -137,7 +127,11 @@ impl<const ID: u32, T: EbmlDefault<ID, String>> EbmlSerializable<ID, T> for Stri
     }
 
     fn data_size(&self) -> usize {
-        self.len()
+        if self == &T::default() {
+            0
+        } else {
+            self.len()
+        }
     }
 }
 
