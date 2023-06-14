@@ -45,8 +45,7 @@ impl<'a, T: Int> EbmlParsable<'a> for T {
     }
 }
 
-// FIXME: Define and double-check float parsing behaviour in error cases
-// FIXME: Also implement a test suite for that
+// TODO: Implement a test suite for float errors
 impl<'a> EbmlParsable<'a> for f64 {
     fn try_parse(data: &'a [u8]) -> Result<Self, ErrorKind> {
         match data.len() {

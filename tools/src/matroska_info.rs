@@ -131,7 +131,7 @@ fn run(filename: &str) -> Result<(), InfoError> {
                 SegmentElement::SeekHead(s) => {
                     println!("|+ Seek head at {:#0x} size {}", 0x0, b.data().offset(i));
                     for seek in s.positions.iter() {
-                        // FIXME: Reimplement
+                        // FIXME: Reimplement this
                         // let element_size = seek.size(0x4DBB);
                         // let id_size = seek.id.size(0x53AB);
                         // let position_size = seek.position.size(0x53AC);

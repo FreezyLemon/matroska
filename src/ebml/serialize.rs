@@ -77,8 +77,7 @@ impl<const ID: u32> EbmlSerializable<ID> for i64 {
     }
 }
 
-// FIXME: How do we even do this for 4-octet floats?
-// I think we need a newtype...
+// FIXME: Handle 4-byte floats. Probably needs a newtype
 impl<const ID: u32> EbmlSerializable<ID> for f64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0.0);

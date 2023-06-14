@@ -110,7 +110,7 @@ impl_ebml_master! {
         [0x4444] segment_family: (Option<Uuid>),
         // [0x6924] chapter_translate: (Option<ChapterTranslate>),
         [0x2AD7B1] timestamp_scale: (u64) = 1000000,
-        [0x4489] duration: (Option<f64>),     // FIXME: should be float
+        [0x4489] duration: (Option<f64>),
         [0x4461] date_utc: (Option<Date>),
         [0x7BA9] title: (Option<String>),
         [0x4D80] muxing_app: (String),

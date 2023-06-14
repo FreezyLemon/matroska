@@ -85,7 +85,7 @@ macro_rules! impl_ebml_master {
 
                 let w = $crate::ebml::serialize::vid::<$struct_id, W>(w)?;
 
-                // TODO: Parametrize starting capacity
+                // TODO: Parametrize or calculate starting capacity
                 let buf = cookie_factory::WriteContext::from(std::vec::Vec::with_capacity(64));
 
                 $(
