@@ -1,4 +1,4 @@
-use std::{io::Write, num::NonZeroU32};
+use std::{io::Write, mem::size_of};
 
 use cookie_factory::{
     bytes::{be_f64, be_i16, be_u8},
@@ -16,26 +16,38 @@ pub trait EbmlSerializable<const ID: u32>: Sized {
     /// Serializes the Rust value as zero or more EBML Elements made
     /// up of an Element ID, the Element Data Size and the Element Data.
     fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W>;
+
+    /// Calculates the exact Element Data Size in bytes/octets.
+    fn data_size(&self) -> usize;
+
+    /// Calculates the exact size of the entire EBML Element, including Element ID,
+    /// Element Data Size and Element Data in bytes/octets.
+    fn size(&self) -> usize {
+        let data_sz = self.data_size();
+        vid_size::<ID>() as usize + vint_size(data_sz as u64).unwrap() as usize + data_sz
+    }
 }
 
 impl<const ID: u32> EbmlSerializable<ID> for u64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0);
 
-        let sz = match *self {
-            // don't serialize if val == default
-            s if s == default => 0,
-
-            // we need to serialize zeros if the default is != 0
-            0 => 1,
-
-            // calculate minimum required size
-            s => 8 - (s.leading_zeros() / 8) as usize,
+        let sz = if *self == default {
+            0
+        } else {
+            <u64 as EbmlSerializable<ID>>::data_size(self)
         };
 
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
+    }
+
+    fn data_size(&self) -> usize {
+        match self {
+            0 => 1, // at least one byte to serialize
+            s => size_of::<Self>() - (s.leading_zeros() / 8) as usize,
+        }
     }
 }
 
@@ -45,39 +57,39 @@ impl<const ID: u32> EbmlSerializable<ID> for u32 {
         // (copy-paste code for u64 and change 8 -> 4)
         <u64 as EbmlSerializable<ID>>::serialize(&u64::from(*self), w, default.map(u64::from))
     }
+
+    fn data_size(&self) -> usize {
+        match self {
+            0 => 1,
+            s => size_of::<Self>() - (s.leading_zeros() / 8) as usize,
+        }
+    }
 }
 
 impl<const ID: u32> EbmlSerializable<ID> for i64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0);
 
-        let sz = match *self {
-            // don't serialize if val == default
-            s if s == default => 0,
-
-            // we need to serialize zeros if the default is != 0
-            0 => 1,
-
-            // handle positive numbers like u64s
-            s @ 1.. => {
-                return <u64 as EbmlSerializable<ID>>::serialize(
-                    &(s as u64),
-                    w,
-                    Some(*self as u64 - 1),
-                )
-            }
-
-            // two's complement -> leading_ones instead of leading_zeros
-            s => 8 - ((s.leading_ones() - 1) / 8) as usize,
+        let sz = if *self == default {
+            0
+        } else {
+            <i64 as EbmlSerializable<ID>>::data_size(self)
         };
 
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
         slice(&self.to_be_bytes()[8 - sz..])(w)
     }
+
+    fn data_size(&self) -> usize {
+        match self {
+            i @ 1.. => size_of::<Self>() - (i.leading_zeros() / 8) as usize,
+            0 => 1,
+            i => size_of::<Self>() - ((i.leading_ones() - 1) / 8) as usize,
+        }
+    }
 }
 
-// FIXME: Handle 4-byte floats. Probably needs a newtype
 impl<const ID: u32> EbmlSerializable<ID> for f64 {
     fn serialize<W: Write>(&self, w: WriteContext<W>, default: Option<Self>) -> GenResult<W> {
         let default = default.unwrap_or(0.0);
@@ -90,6 +102,11 @@ impl<const ID: u32> EbmlSerializable<ID> for f64 {
             be_f64(*self)(w)
         }
     }
+
+    fn data_size(&self) -> usize {
+        // FIXME: Handle 4-byte floats. Probably needs a newtype
+        8
+    }
 }
 
 impl<const ID: u32> EbmlSerializable<ID> for crate::ebml::Date {
@@ -97,6 +114,10 @@ impl<const ID: u32> EbmlSerializable<ID> for crate::ebml::Date {
         // The default for Date Elements defaults to Date(0_i64).
         // The default for Integer Elements is also 0, so this is fine.
         <i64 as EbmlSerializable<ID>>::serialize(&self.0, w, default.map(|d| d.0))
+    }
+
+    fn data_size(&self) -> usize {
+        <i64 as EbmlSerializable<ID>>::data_size(&self.0)
     }
 }
 
@@ -109,6 +130,10 @@ impl<const ID: u32> EbmlSerializable<ID> for String {
             <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_bytes(), w, None)
         }
     }
+
+    fn data_size(&self) -> usize {
+        self.len()
+    }
 }
 
 impl<const ID: u32, const N: usize> EbmlSerializable<ID> for [u8; N] {
@@ -116,6 +141,10 @@ impl<const ID: u32, const N: usize> EbmlSerializable<ID> for [u8; N] {
         assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
 
         <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_slice(), w, None)
+    }
+
+    fn data_size(&self) -> usize {
+        N
     }
 }
 
@@ -132,6 +161,24 @@ impl<const ID: u32, T: EbmlSerializable<ID>> EbmlSerializable<ID> for Vec<T> {
 
         Ok(w)
     }
+
+    fn data_size(&self) -> usize {
+        // This is just implemented for completeness' sake.
+        self.iter().map(|t| t.data_size()).sum()
+    }
+
+    fn size(&self) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+
+        let id_size = vid_size::<ID>();
+        let sizes_and_data = self.iter().map(|t| t.data_size()).fold(0, |acc, sz| {
+            acc + sz + vint_size(sz as u64).unwrap() as usize
+        });
+
+        self.len() * id_size as usize + sizes_and_data
+    }
 }
 
 impl<const ID: u32, T: EbmlSerializable<ID>> EbmlSerializable<ID> for Option<T> {
@@ -143,6 +190,20 @@ impl<const ID: u32, T: EbmlSerializable<ID>> EbmlSerializable<ID> for Option<T> 
             None => Ok(w),
         }
     }
+
+    fn data_size(&self) -> usize {
+        match self {
+            Some(t) => t.data_size(),
+            None => 0,
+        }
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            Some(t) => t.size(),
+            None => 0,
+        }
+    }
 }
 
 impl<const ID: u32> EbmlSerializable<ID> for Vec<u8> {
@@ -150,6 +211,10 @@ impl<const ID: u32> EbmlSerializable<ID> for Vec<u8> {
         assert!(default.is_none(), "Default values are not supported for generic Binary Elements. If you are parsing the binary and want to supply a default value for the parsed type, consider implementing a newtype.");
 
         <&[u8] as EbmlSerializable<ID>>::serialize(&self.as_slice(), w, None)
+    }
+
+    fn data_size(&self) -> usize {
+        self.len()
     }
 }
 
@@ -160,6 +225,10 @@ impl<'a, const ID: u32> EbmlSerializable<ID> for &'a [u8] {
         let w = vid::<ID, W>(w)?;
         let w = vint(self.len() as u64)(w)?;
         slice(self)(w)
+    }
+
+    fn data_size(&self) -> usize {
+        self.len()
     }
 }
 
@@ -172,17 +241,20 @@ impl<const ID: u32> EbmlSerializable<ID> for uuid::Uuid {
 
         <[u8; 16] as EbmlSerializable<ID>>::serialize(self.as_bytes(), w, None)
     }
+
+    fn data_size(&self) -> usize {
+        16
+    }
 }
 
 pub fn vint_size(val: u64) -> Result<u8, GenError> {
-    for i in 1..=8 {
-        if val >> (i * 7) == 0 {
-            return Ok(i);
-        }
+    match val {
+        // (1 << 56) - 1 is the maximum value that can fit into an
+        // 8-byte VINT. Anything larger is currently not supported.
+        v if v >= (1 << 56) => Err(GenError::NotYetImplemented),
+        0 => Ok(1),
+        v => Ok(1 + v.ilog2() as u8 / 7),
     }
-
-    // val is too large for VINT
-    Err(GenError::CustomError(0))
 }
 
 pub fn vint<W: Write>(val: u64) -> impl SerializeFn<W> {
@@ -202,14 +274,13 @@ pub fn vint<W: Write>(val: u64) -> impl SerializeFn<W> {
 
 pub fn vid<const ID: u32, W: Write>(w: WriteContext<W>) -> GenResult<W> {
     assert_ne!(ID, 0);
-    let id = NonZeroU32::new(ID).unwrap();
-    let skip = 4 - vid_size(id) as usize;
+    let skip = 4 - vid_size::<ID>() as usize;
 
     slice(&ID.to_be_bytes()[skip..])(w)
 }
 
-pub const fn vid_size(i: NonZeroU32) -> u8 {
-    4 - (i.leading_zeros() / 8) as u8
+pub const fn vid_size<const ID: u32>() -> u8 {
+    4 - (ID.leading_zeros() / 8) as u8
 }
 
 pub fn segment_element<W: Write>(w: WriteContext<W>) -> GenResult<W> {

@@ -85,8 +85,7 @@ macro_rules! impl_ebml_master {
 
                 let w = $crate::ebml::serialize::vid::<$struct_id, W>(w)?;
 
-                // TODO: Parametrize or calculate starting capacity
-                let buf = cookie_factory::WriteContext::from(std::vec::Vec::with_capacity(64));
+                let buf = cookie_factory::WriteContext::from(Vec::with_capacity(self.size()));
 
                 $(
                     let buf = <$($field_type)+ as $crate::ebml::EbmlSerializable<$field_id>>::serialize(
@@ -96,8 +95,22 @@ macro_rules! impl_ebml_master {
                     )?;
                 )+
 
-                let w = $crate::ebml::serialize::vint(buf.position as u64)(w)?;
+                debug_assert_eq!(self.size(), buf.position as usize);
+
+                let w = $crate::ebml::serialize::vint(buf.position)(w)?;
                 cookie_factory::combinator::slice(buf.write)(w)
+            }
+
+            fn data_size(&self) -> usize {
+                let data_size = $(
+                    <$($field_type)+ as $crate::ebml::EbmlSerializable<$field_id>>::size(
+                        &self.$field_name
+                    ) +
+                )+ 0;
+
+                $crate::ebml::serialize::vid_size::<$struct_id>() as usize+
+                $crate::ebml::serialize::vint_size(data_size as u64).unwrap() as usize+
+                data_size
             }
         }
     };
