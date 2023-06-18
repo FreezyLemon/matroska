@@ -124,23 +124,23 @@ macro_rules! impl_ebml_default {
 /// The macro requires a struct definition adhering to the following syntax:
 /// ```ignore
 /// # struct MyOtherMasterElement;
-/// 
+///
 /// impl_ebml_master! {
 ///     #[derive(Debug, Clone)] // Optional
 ///     [0xABCD]                // Required: Element ID
 ///     struct MyMasterElement {
 ///         // One or more fields, defined like this:
 ///         // [ID] field_name: FieldType,
-/// 
+///
 ///         // Some examples:
 ///         [0xE1] required_uint: u64,
 ///         [0xE2] optional_int: Option<i64>,
 ///         [0xC0] sub_element: MyOtherMasterElement,
-/// 
+///
 ///         // If you specify a default value, the Element becomes optional.
 ///         // Not all types of EBML Element support default values.
 ///         [0xF0] optional_value: i64 = -5,
-/// 
+///
 ///         // For Elements that can occur more than once, Vec<T> is available.
 ///         // Vec<T> requires specifying a minimum amount of Elements like so:
 ///         [0xC1] repeating_float: Vec<f64> [0..],

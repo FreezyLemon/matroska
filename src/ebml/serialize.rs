@@ -97,7 +97,7 @@ impl<const ID: u32, T: EbmlDefault<ID, i64>> EbmlSerializable<ID, T> for i64 {
         if *self == T::default() {
             return Ok(w);
         }
-        
+
         let sz = <i64 as EbmlSerializable<ID, T>>::data_size(self);
         let w = vid::<ID, W>(w)?;
         let w = vint(sz as u64)(w)?;
@@ -458,6 +458,7 @@ mod tests {
             check_uint::<0xD8, u64>(val, expected_len, expected);
         }
 
+        #[rustfmt::skip]
         let tests = [
             ((4321 << 42) + 8765, 12, [0xAB, 0xCD, 0xEF, 0xFE, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
             (42, 0, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
@@ -476,10 +477,10 @@ mod tests {
     ) {
         let mut buf = [0u8; 13];
         let w = buf.as_mut_slice().into();
-        
+
         let w = <u64 as EbmlSerializable<ID, T>>::serialize(&val, w)
-        .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
-    
+            .unwrap_or_else(|_| panic!("serialization failed for id: {ID:#0X}"));
+
         let written = w.position;
         assert_eq!(buf, expected, "id: {ID:#0X}");
         assert_eq!(written, expected_len, "id: {ID:#0X}");
@@ -521,6 +522,7 @@ mod tests {
         }
 
         // long IDs
+        #[rustfmt::skip]
         let tests = [
             (-17, 0, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
             ((4321 << 42) + 8765, 12, [0x12, 0xAB, 0x34, 0xCD, 0x87, 0x43, 0x84, 0x00, 0x00, 0x00, 0x22, 0x3D, 0x00]),
