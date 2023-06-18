@@ -10,8 +10,8 @@ use crate::ebml::serialize;
 use crate::{
     ebml::{EbmlHeader, EbmlSerializable},
     elements::{
-        Audio, Cluster, Colour, Info, Lacing, SeekHead, SimpleBlock, TrackEntry, TrackType, Tracks,
-        Video,
+        Audio, Cluster, Colour, Info, Lacing, Seek, SeekHead, SimpleBlock, TrackEntry, TrackType,
+        Tracks, Video,
     },
 };
 
@@ -131,29 +131,29 @@ impl Muxer for MkvMuxer {
         self.write_tracks(&mut tracks)?;
 
         // FIXME: Reintroduce this
-        // let info_seek = Seek {
-        //     id: [0x15, 0x49, 0xA9, 0x66],
-        //     position: 0,
-        // };
-        // let tracks_seek = Seek {
-        //     id: [0x16, 0x54, 0xAE, 0x6B],
-        //     position: 0,
-        // };
-        // let cluster_seek = Seek {
-        //     id: [0x1F, 0x43, 0xB6, 0x75],
-        //     position: 0,
-        // };
+        let info_seek = Seek {
+            id: [0x15, 0x49, 0xA9, 0x66],
+            position: 0,
+        };
+        let tracks_seek = Seek {
+            id: [0x16, 0x54, 0xAE, 0x6B],
+            position: 0,
+        };
+        let cluster_seek = Seek {
+            id: [0x1F, 0x43, 0xB6, 0x75],
+            position: 0,
+        };
 
-        // self.seek_head.positions.push(info_seek);
-        // self.seek_head.positions.push(tracks_seek);
-        // self.seek_head.positions.push(cluster_seek);
+        self.seek_head.positions.push(info_seek);
+        self.seek_head.positions.push(tracks_seek);
+        self.seek_head.positions.push(cluster_seek);
 
-        // self.seek_head.positions[0].position = self.seek_head.size(0x114D9B74) as u64;
-        // self.seek_head.positions[1].position =
-        //     (self.seek_head.size(0x114D9B74) + info.size(0x1549A966)) as u64;
-        // self.seek_head.positions[2].position = (self.seek_head.size(0x114D9B74)
-        //     + info.size(0x1549A966)
-        //     + tracks.size(0x1654AE6B)) as u64;
+        let seek_head_size = self.seek_head.size() as u64;
+        let info_size = self.info.as_ref().map(|i| i.size()).unwrap_or(0) as u64;
+        let tracks_size = self.tracks.as_ref().map(|t| t.size()).unwrap_or(0) as u64;
+        self.seek_head.positions[0].position = seek_head_size;
+        self.seek_head.positions[1].position = seek_head_size + info_size;
+        self.seek_head.positions[2].position = seek_head_size + info_size + tracks_size;
 
         let mut seek_head = Vec::new();
         self.write_seek_head(&mut seek_head)?;
